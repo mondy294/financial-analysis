@@ -1,11 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { addWatchlist, getFundDetail, getHoldings, getWatchlist, removeHolding, removeWatchlist, saveHolding } from "./api/client";
+import {
+  addCompare,
+  addWatchlist,
+  getCompareList,
+  getFundDetail,
+  getHoldings,
+  getWatchlist,
+  removeCompare,
+  removeHolding,
+  removeWatchlist,
+  saveHolding,
+} from "./api/client";
 import { FundSearchPanel } from "./components/FundSearchPanel";
+import { ComparePage } from "./pages/ComparePage";
 import { HoldingsPage } from "./pages/HoldingsPage";
 import { OverviewPage } from "./pages/OverviewPage";
+import { ScreenerPage } from "./pages/ScreenerPage";
 import { WatchlistPage } from "./pages/WatchlistPage";
-import type { FundDetailResponse, HoldingDraft, HoldingItem, WatchlistItem } from "./types";
+import type { CompareItem, FundDetailResponse, HoldingDraft, HoldingItem, WatchlistItem } from "./types";
 
 const emptyHoldingDraft: HoldingDraft = {
   code: "",
@@ -36,6 +49,14 @@ const pageMetaMap: Record<string, PageMeta> = {
     title: "我的持有",
     description: "这里记录你自己的仓位信息：状态、收益率、持仓金额和备注，全都持久化到本地 JSON。",
   },
+  "/screener": {
+    title: "条件选基",
+    description: "先按板块和规则找候选，再决定要不要放进自选、对比或持有。",
+  },
+  "/compare": {
+    title: "基金对比",
+    description: "把候选基金先横着比，再决定谁值得继续盯、谁适合落进持有。",
+  },
 };
 
 export default function App() {
@@ -44,14 +65,16 @@ export default function App() {
   const [searching, setSearching] = useState(false);
   const [holdingsLoading, setHoldingsLoading] = useState(true);
   const [watchlistLoading, setWatchlistLoading] = useState(true);
+  const [compareLoading, setCompareLoading] = useState(true);
   const [spotlight, setSpotlight] = useState<FundDetailResponse | null>(null);
   const [holdings, setHoldings] = useState<HoldingItem[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [compareItems, setCompareItems] = useState<CompareItem[]>([]);
   const [holdingDraft, setHoldingDraft] = useState<HoldingDraft | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
 
   useEffect(() => {
-    void Promise.all([reloadHoldings(), reloadWatchlist()]);
+    void Promise.all([reloadHoldings(), reloadWatchlist(), reloadCompare()]);
   }, []);
 
   useEffect(() => {
@@ -67,6 +90,8 @@ export default function App() {
     return pageMetaMap[location.pathname] ?? pageMetaMap["/overview"];
   }, [location.pathname]);
 
+  const showFundSearch = location.pathname === "/overview";
+
   const spotlightHolding = useMemo(
     () => holdings.find((item) => item.code === spotlight?.fund.code) ?? null,
     [holdings, spotlight],
@@ -76,6 +101,9 @@ export default function App() {
     () => watchlist.some((item) => item.code === spotlight?.fund.code),
     [watchlist, spotlight],
   );
+
+  const compareCodes = useMemo(() => compareItems.map((item) => item.code), [compareItems]);
+  const watchlistCodes = useMemo(() => watchlist.map((item) => item.code), [watchlist]);
 
   async function reloadHoldings() {
     setHoldingsLoading(true);
@@ -96,6 +124,17 @@ export default function App() {
       setNotice({ type: "error", message: error instanceof Error ? error.message : "加载自选失败" });
     } finally {
       setWatchlistLoading(false);
+    }
+  }
+
+  async function reloadCompare() {
+    setCompareLoading(true);
+    try {
+      setCompareItems(await getCompareList());
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "加载对比池失败" });
+    } finally {
+      setCompareLoading(false);
     }
   }
 
@@ -130,6 +169,26 @@ export default function App() {
       setNotice({ type: "success", message: `已把 ${code} 从自选移除` });
     } catch (error) {
       setNotice({ type: "error", message: error instanceof Error ? error.message : "移除自选失败" });
+    }
+  }
+
+  async function handleAddCompare(code: string) {
+    try {
+      await addCompare(code);
+      await reloadCompare();
+      setNotice({ type: "success", message: `已把 ${code} 加入对比池` });
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "加入对比失败" });
+    }
+  }
+
+  async function handleRemoveCompare(code: string) {
+    try {
+      await removeCompare(code);
+      await reloadCompare();
+      setNotice({ type: "success", message: `已把 ${code} 从对比池移除` });
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "移除对比失败" });
     }
   }
 
@@ -180,6 +239,10 @@ export default function App() {
     navigate("/overview");
   }
 
+  function openDetailByCode(code: string) {
+    void handleSearch(code);
+  }
+
   return (
     <div className="console-shell">
       <div className="ambient ambient-a" />
@@ -189,7 +252,7 @@ export default function App() {
         <div className="brand-panel">
           <span className="eyebrow">Personal Console</span>
           <h1>基金管理台</h1>
-          <p>一个干净点的本地工作台：自选负责盯，持有负责记，总览负责看清楚走势。</p>
+          <p>总览负责看细节，选基负责找候选，自选负责盯，对比负责横着比，持有负责记自己的仓位。</p>
         </div>
 
         <nav className="sidebar-nav">
@@ -199,12 +262,25 @@ export default function App() {
               <span>查询后看完整业绩和净值表</span>
             </div>
           </NavLink>
+          <NavLink to="/screener" className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}>
+            <div>
+              <strong>条件选基</strong>
+              <span>板块、筛选器和排行榜</span>
+            </div>
+          </NavLink>
           <NavLink to="/watchlist" className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}>
             <div>
               <strong>我的自选</strong>
               <span>重点观察池</span>
             </div>
             <em>{watchlist.length}</em>
+          </NavLink>
+          <NavLink to="/compare" className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}>
+            <div>
+              <strong>基金对比</strong>
+              <span>候选基金横向比一比</span>
+            </div>
+            <em>{compareItems.length}</em>
           </NavLink>
           <NavLink to="/holdings" className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}>
             <div>
@@ -231,6 +307,14 @@ export default function App() {
               <span>持有数量</span>
               <strong>{holdings.length}</strong>
             </article>
+            <article>
+              <span>对比数量</span>
+              <strong>{compareItems.length}</strong>
+            </article>
+            <article>
+              <span>发现入口</span>
+              <strong>条件选基</strong>
+            </article>
           </div>
         </section>
       </aside>
@@ -242,7 +326,7 @@ export default function App() {
             <h2>{pageMeta.title}</h2>
             <p>{pageMeta.description}</p>
           </div>
-          <FundSearchPanel loading={searching} onSearch={handleSearch} />
+          {showFundSearch ? <FundSearchPanel loading={searching} onSearch={handleSearch} /> : null}
         </header>
 
         {notice ? <div className={`toast toast-${notice.type}`}>{notice.message}</div> : null}
@@ -263,12 +347,37 @@ export default function App() {
             }
           />
           <Route
+            path="/screener"
+            element={
+              <ScreenerPage
+                compareCodes={compareCodes}
+                watchlistCodes={watchlistCodes}
+                onAddWatchlist={handleAddWatchlist}
+                onAddCompare={handleAddCompare}
+                onOpenDetail={openDetailByCode}
+                onUseForHolding={prepareHolding}
+              />
+            }
+          />
+          <Route
             path="/watchlist"
             element={
               <WatchlistPage
                 items={watchlist}
                 loading={watchlistLoading}
                 onRemove={handleRemoveWatchlist}
+                onOpenDetail={handleOpenDetail}
+                onUseForHolding={prepareHolding}
+              />
+            }
+          />
+          <Route
+            path="/compare"
+            element={
+              <ComparePage
+                items={compareItems}
+                loading={compareLoading}
+                onRemove={handleRemoveCompare}
                 onOpenDetail={handleOpenDetail}
                 onUseForHolding={prepareHolding}
               />

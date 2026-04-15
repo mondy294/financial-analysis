@@ -105,6 +105,10 @@ export function FundSummaryCard({
               <strong>{formatAmount(holding.positionAmount)}</strong>
             </div>
             <div>
+              <span className="subtle-label">成本净值</span>
+              <strong>{formatNav(holding.costNav)}</strong>
+            </div>
+            <div>
               <span className="subtle-label">最近更新</span>
               <strong>{formatDateTime(holding.updatedAt)}</strong>
             </div>
@@ -112,7 +116,7 @@ export function FundSummaryCard({
         ) : null}
       </section>
 
-      <ChartPanel points={detail.trend} />
+      <ChartPanel points={detail.trend} costNav={holding?.costNav ?? null} />
 
       <section className="panel">
         <div className="section-head">

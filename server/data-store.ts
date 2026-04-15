@@ -1,19 +1,25 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PersistedHoldingItem, PersistedWatchlistItem } from "./types.js";
+import type {
+  CollectionFile,
+  FundUniverseCacheFile,
+  PersistedCompareItem,
+  PersistedHoldingItem,
+  PersistedScreenerPreset,
+  PersistedWatchlistItem,
+} from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataDir = path.resolve(__dirname, "../data");
 const watchlistFile = path.join(dataDir, "watchlist.json");
 const holdingsFile = path.join(dataDir, "holdings.json");
+const compareFile = path.join(dataDir, "compare-list.json");
+const fundUniverseFile = path.join(dataDir, "fund-universe-cache.json");
+const screenerPresetsFile = path.join(dataDir, "screener-presets.json");
 
-type CollectionFile<T> = {
-  items: T[];
-};
-
-async function ensureDataFile<T>(filePath: string, fallback: CollectionFile<T>) {
+async function ensureDataFile<T>(filePath: string, fallback: T) {
   await fs.mkdir(dataDir, { recursive: true });
 
   try {
@@ -23,19 +29,31 @@ async function ensureDataFile<T>(filePath: string, fallback: CollectionFile<T>) 
   }
 }
 
-async function readCollection<T>(filePath: string): Promise<CollectionFile<T>> {
-  const fallback = { items: [] as T[] };
+async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
   await ensureDataFile(filePath, fallback);
   const raw = await fs.readFile(filePath, "utf-8");
-  const parsed = JSON.parse(raw) as Partial<CollectionFile<T>>;
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+async function writeJsonFile<T>(filePath: string, payload: T) {
+  await ensureDataFile(filePath, payload);
+  await fs.writeFile(filePath, JSON.stringify(payload, null, 2), "utf-8");
+}
+
+async function readCollection<T>(filePath: string): Promise<CollectionFile<T>> {
+  const parsed = await readJsonFile<Partial<CollectionFile<T>>>(filePath, { items: [] });
   return {
     items: Array.isArray(parsed.items) ? parsed.items : [],
   };
 }
 
-async function writeCollection<T>(filePath: string, payload: CollectionFile<T>) {
-  await ensureDataFile(filePath, payload);
-  await fs.writeFile(filePath, JSON.stringify(payload, null, 2), "utf-8");
+async function writeCollection<T>(filePath: string, items: T[]) {
+  await writeJsonFile<CollectionFile<T>>(filePath, { items });
 }
 
 export async function getWatchlist() {
@@ -43,7 +61,7 @@ export async function getWatchlist() {
 }
 
 export async function saveWatchlist(items: PersistedWatchlistItem[]) {
-  await writeCollection<PersistedWatchlistItem>(watchlistFile, { items });
+  await writeCollection<PersistedWatchlistItem>(watchlistFile, items);
 }
 
 export async function getHoldings() {
@@ -51,5 +69,39 @@ export async function getHoldings() {
 }
 
 export async function saveHoldings(items: PersistedHoldingItem[]) {
-  await writeCollection<PersistedHoldingItem>(holdingsFile, { items });
+  await writeCollection<PersistedHoldingItem>(holdingsFile, items);
+}
+
+export async function getCompareList() {
+  return readCollection<PersistedCompareItem>(compareFile);
+}
+
+export async function saveCompareList(items: PersistedCompareItem[]) {
+  await writeCollection<PersistedCompareItem>(compareFile, items);
+}
+
+export async function getFundUniverseCache(): Promise<FundUniverseCacheFile> {
+  const parsed = await readJsonFile<Partial<FundUniverseCacheFile>>(fundUniverseFile, {
+    updatedAt: null,
+    coverageNote: "基金池尚未刷新。",
+    items: [],
+  });
+
+  return {
+    updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
+    coverageNote: typeof parsed.coverageNote === "string" ? parsed.coverageNote : "基金池尚未刷新。",
+    items: Array.isArray(parsed.items) ? parsed.items : [],
+  };
+}
+
+export async function saveFundUniverseCache(payload: FundUniverseCacheFile) {
+  await writeJsonFile<FundUniverseCacheFile>(fundUniverseFile, payload);
+}
+
+export async function getScreenerPresets() {
+  return readCollection<PersistedScreenerPreset>(screenerPresetsFile);
+}
+
+export async function saveScreenerPresets(items: PersistedScreenerPreset[]) {
+  await writeCollection<PersistedScreenerPreset>(screenerPresetsFile, items);
 }

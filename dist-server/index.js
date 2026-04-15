@@ -2,8 +2,9 @@ import express from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getHoldings, getWatchlist, saveHoldings, saveWatchlist } from "./data-store.js";
+import { getCompareList, getHoldings, getWatchlist, saveCompareList, saveHoldings, saveWatchlist } from "./data-store.js";
 import { getFundPerformance } from "./fund-service.js";
+import { deleteScreenerPreset, getScreenerOptions, getScreenerPresetsList, getSectorFunds, getSectorStats, getUniverseItemByCode, queryFundUniverse, refreshFundUniverseCache, saveScreenerPreset, } from "./screener-service.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distDir = path.resolve(__dirname, "../dist");
@@ -61,6 +62,22 @@ async function enrichHoldingItems(items) {
         }
         catch (error) {
             return { ...item, detail: null, error: toErrorMessage(error) };
+        }
+    }));
+}
+async function enrichCompareItems(items) {
+    return Promise.all(items.map(async (item) => {
+        try {
+            const [detail, screener] = await Promise.all([getFundPerformance(item.code), getUniverseItemByCode(item.code)]);
+            return { ...item, detail, screener, error: null };
+        }
+        catch (error) {
+            return {
+                ...item,
+                detail: null,
+                screener: await getUniverseItemByCode(item.code),
+                error: toErrorMessage(error),
+            };
         }
     }));
 }
@@ -142,6 +159,110 @@ app.delete("/api/holdings/:code", async (request, response) => {
         const payload = await getHoldings();
         const nextItems = payload.items.filter((item) => item.code !== code);
         await saveHoldings(nextItems);
+        response.json({ ok: true });
+    }
+    catch (error) {
+        response.status(400).json({ error: toErrorMessage(error) });
+    }
+});
+app.get("/api/compare", async (_request, response) => {
+    try {
+        const payload = await getCompareList();
+        response.json({ items: await enrichCompareItems(payload.items) });
+    }
+    catch (error) {
+        response.status(500).json({ error: toErrorMessage(error) });
+    }
+});
+app.post("/api/compare", async (request, response) => {
+    try {
+        const code = validateCode(String(request.body?.code ?? ""));
+        const payload = await getCompareList();
+        if (!payload.items.some((item) => item.code === code)) {
+            payload.items.unshift({ code, addedAt: new Date().toISOString() });
+            await saveCompareList(payload.items.slice(0, 4));
+        }
+        response.status(201).json({ ok: true });
+    }
+    catch (error) {
+        response.status(400).json({ error: toErrorMessage(error) });
+    }
+});
+app.delete("/api/compare/:code", async (request, response) => {
+    try {
+        const code = validateCode(request.params.code);
+        const payload = await getCompareList();
+        const nextItems = payload.items.filter((item) => item.code !== code);
+        await saveCompareList(nextItems);
+        response.json({ ok: true });
+    }
+    catch (error) {
+        response.status(400).json({ error: toErrorMessage(error) });
+    }
+});
+app.get("/api/screener/options", async (_request, response) => {
+    try {
+        response.json(await getScreenerOptions());
+    }
+    catch (error) {
+        response.status(500).json({ error: toErrorMessage(error) });
+    }
+});
+app.post("/api/screener/query", async (request, response) => {
+    try {
+        response.json(await queryFundUniverse((request.body ?? {})));
+    }
+    catch (error) {
+        response.status(400).json({ error: toErrorMessage(error) });
+    }
+});
+app.get("/api/screener/sectors", async (_request, response) => {
+    try {
+        response.json({ items: await getSectorStats() });
+    }
+    catch (error) {
+        response.status(500).json({ error: toErrorMessage(error) });
+    }
+});
+app.get("/api/screener/sectors/:sector/funds", async (request, response) => {
+    try {
+        const ranking = typeof request.query.ranking === "string" ? request.query.ranking : null;
+        response.json(await getSectorFunds(decodeURIComponent(request.params.sector), ranking));
+    }
+    catch (error) {
+        response.status(500).json({ error: toErrorMessage(error) });
+    }
+});
+app.post("/api/screener/refresh", async (_request, response) => {
+    try {
+        const cache = await refreshFundUniverseCache();
+        response.json({ ok: true, updatedAt: cache.updatedAt, total: cache.items.length, coverageNote: cache.coverageNote });
+    }
+    catch (error) {
+        response.status(500).json({ error: toErrorMessage(error) });
+    }
+});
+app.get("/api/screener/presets", async (_request, response) => {
+    try {
+        response.json({ items: await getScreenerPresetsList() });
+    }
+    catch (error) {
+        response.status(500).json({ error: toErrorMessage(error) });
+    }
+});
+app.post("/api/screener/presets", async (request, response) => {
+    try {
+        const name = String(request.body?.name ?? "");
+        const query = (request.body?.query ?? {});
+        response.status(201).json(await saveScreenerPreset(name, query));
+    }
+    catch (error) {
+        response.status(400).json({ error: toErrorMessage(error) });
+    }
+});
+app.delete("/api/screener/presets/:id", async (request, response) => {
+    try {
+        await deleteScreenerPreset(String(request.params.id ?? ""));
         response.json({ ok: true });
     }
     catch (error) {
