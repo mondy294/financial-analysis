@@ -320,7 +320,7 @@ export default function App() {
       </aside>
 
       <main className="workspace-shell">
-        <header className="workspace-header">
+        <header className={`workspace-header${showFundSearch ? "" : " workspace-header--single"}`}>
           <div className="workspace-copy-block">
             <span className="eyebrow">Financial Fund Console</span>
             <h2>{pageMeta.title}</h2>

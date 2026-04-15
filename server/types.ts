@@ -176,9 +176,26 @@ export type ScreenerOptionsResponse = {
   }>;
 };
 
+export type ScreenerSectorSource = "topic" | "tag";
+
 export type ScreenerSectorStat = {
+  id: string;
   name: string;
   count: number;
+  totalFundCount: number | null;
+  group: string;
+  source: ScreenerSectorSource;
+};
+
+export type ScreenerSectorCacheItem = ScreenerSectorStat & {
+  fundCodes: string[];
+};
+
+export type ScreenerSectorCacheFile = {
+  updatedAt: string | null;
+  universeUpdatedAt: string | null;
+  coverageNote: string;
+  items: ScreenerSectorCacheItem[];
 };
 
 export type PersistedScreenerPreset = {

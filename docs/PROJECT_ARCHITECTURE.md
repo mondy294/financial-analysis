@@ -32,6 +32,9 @@
 
 ### 数据来源
 - 天天基金 / 东方财富公开页面接口
+- 基金详情与净值：`pingzhongdata`、`fundgz`、`f10/lsjz`
+- 条件选基候选池：`fundcode_search.js`、`rankhandler.aspx`
+- 主题板块扩容：天天基金主题基金 `ZTJJ/GetBKListByBKTypeNew`、`ZTJJ/GetBKRelTopicFundNew`
 - 服务端负责抓取、聚合、清洗并转成前端可直接消费的结构
 
 ### 本地持久化
@@ -39,6 +42,7 @@
 - `data/holdings.json`
 - `data/compare-list.json`
 - `data/fund-universe-cache.json`
+- `data/screener-sector-cache.json`
 - `data/screener-presets.json`
 
 ### 启动方式
@@ -253,6 +257,7 @@ financial/
 - 负责 `data/` 目录及 JSON 文件存在性检查
 - 提供读写集合文件的方法
 - 把 JSON 文件抽象成简易仓储层
+- 当前还负责 `screener-sector-cache.json` 的持久化，避免每次打开条件选基都重新抓 180+ 个主题板块
 
 #### `server/types.ts`
 职责：
@@ -261,6 +266,7 @@ financial/
   - 基金详情结构
   - 原始持久化结构
   - 富化后的返回结构
+  - 条件选基候选池与主题板块缓存结构
 
 ---
 

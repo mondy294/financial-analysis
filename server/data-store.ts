@@ -8,6 +8,7 @@ import type {
   PersistedHoldingItem,
   PersistedScreenerPreset,
   PersistedWatchlistItem,
+  ScreenerSectorCacheFile,
 } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,6 +18,7 @@ const watchlistFile = path.join(dataDir, "watchlist.json");
 const holdingsFile = path.join(dataDir, "holdings.json");
 const compareFile = path.join(dataDir, "compare-list.json");
 const fundUniverseFile = path.join(dataDir, "fund-universe-cache.json");
+const screenerSectorCacheFile = path.join(dataDir, "screener-sector-cache.json");
 const screenerPresetsFile = path.join(dataDir, "screener-presets.json");
 
 async function ensureDataFile<T>(filePath: string, fallback: T) {
@@ -96,6 +98,26 @@ export async function getFundUniverseCache(): Promise<FundUniverseCacheFile> {
 
 export async function saveFundUniverseCache(payload: FundUniverseCacheFile) {
   await writeJsonFile<FundUniverseCacheFile>(fundUniverseFile, payload);
+}
+
+export async function getScreenerSectorCache(): Promise<ScreenerSectorCacheFile> {
+  const parsed = await readJsonFile<Partial<ScreenerSectorCacheFile>>(screenerSectorCacheFile, {
+    updatedAt: null,
+    universeUpdatedAt: null,
+    coverageNote: "主题板块缓存尚未刷新。",
+    items: [],
+  });
+
+  return {
+    updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
+    universeUpdatedAt: typeof parsed.universeUpdatedAt === "string" ? parsed.universeUpdatedAt : null,
+    coverageNote: typeof parsed.coverageNote === "string" ? parsed.coverageNote : "主题板块缓存尚未刷新。",
+    items: Array.isArray(parsed.items) ? parsed.items : [],
+  };
+}
+
+export async function saveScreenerSectorCache(payload: ScreenerSectorCacheFile) {
+  await writeJsonFile<ScreenerSectorCacheFile>(screenerSectorCacheFile, payload);
 }
 
 export async function getScreenerPresets() {

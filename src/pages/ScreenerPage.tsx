@@ -171,12 +171,12 @@ export function ScreenerPage({
           <SectorNavigator
             items={sectors}
             selectedSectors={selectedSectors}
-            onToggle={(sector) => {
+            onToggle={(sectorId) => {
               const current = new Set(query.sectors ?? []);
-              if (current.has(sector)) {
-                current.delete(sector);
+              if (current.has(sectorId)) {
+                current.delete(sectorId);
               } else {
-                current.add(sector);
+                current.add(sectorId);
               }
               void runQuery({ ...query, sectors: [...current], page: 1, pageSize: 50 });
             }}

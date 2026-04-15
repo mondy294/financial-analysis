@@ -1,4 +1,11 @@
-import { getFundUniverseCache, getScreenerPresets, saveFundUniverseCache, saveScreenerPresets } from "./data-store.js";
+import {
+  getFundUniverseCache,
+  getScreenerPresets,
+  getScreenerSectorCache,
+  saveFundUniverseCache,
+  saveScreenerPresets,
+  saveScreenerSectorCache,
+} from "./data-store.js";
 import { getFundPerformance } from "./fund-service.js";
 import type {
   FundDetailResponse,
@@ -13,6 +20,8 @@ import type {
   ScreenerQueryPayload,
   ScreenerQueryResult,
   ScreenerRankingKey,
+  ScreenerSectorCacheFile,
+  ScreenerSectorCacheItem,
   ScreenerSectorStat,
   ScreenerSortOrder,
 } from "./types.js";
@@ -53,6 +62,32 @@ type RankSeedConfig = {
   pageSize: number;
 };
 
+type TopicBoardGroup = "行业" | "概念";
+
+type TopicBoardEntry = {
+  INDEXCODE: string;
+  INDEXNAME: string;
+};
+
+type TopicBoardListPayload = {
+  hy1?: TopicBoardEntry[];
+  hy2?: TopicBoardEntry[];
+  gn?: TopicBoardEntry[];
+};
+
+type TopicFundRelationRow = {
+  FCODE: string;
+};
+
+type EastmoneyJsonpResponse<T> = {
+  Data: T;
+  ErrCode: number;
+  ErrMsg: string | null;
+  TotalCount: number;
+  PageSize: number;
+  PageIndex: number;
+};
+
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
 
@@ -62,9 +97,13 @@ const API_HEADERS = {
 };
 
 const FUND_CATALOG_URL = "https://fund.eastmoney.com/js/fundcode_search.js";
+const TOPIC_INTERFACE_BASE_URL = "https://api.fund.eastmoney.com/ZTJJ";
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const SECTOR_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_COVERAGE_NOTE =
   "V1 基金池通过东方财富基金排行 rankhandler.aspx 与 fundcode_search.js 交叉构建，优先覆盖主动、指数、纯债、固收+、QDII、FOF 等常见候选。";
+const DEFAULT_SECTOR_COVERAGE_NOTE =
+  "板块列表接入天天基金主题基金 ZTJJ 接口，覆盖行业与概念主题，再与本地候选基金池做关联映射。";
 
 const BASE_FUND_TYPES: ScreenerFundCategory[] = ["主动", "指数", "纯债", "固收+", "QDII", "FOF"];
 const BASE_SECTORS = ["红利", "医疗", "科技", "新能源", "消费", "宽基", "纯债", "固收+", "海外", "黄金"];
@@ -131,6 +170,40 @@ async function fetchText(url: string, init?: RequestInit): Promise<string> {
   }
 
   return response.text();
+}
+
+function parseJsonp<T>(payload: string) {
+  const normalized = payload.trim();
+  const start = normalized.indexOf("(");
+  const end = normalized.lastIndexOf(")");
+
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("接口返回的 JSONP 格式无法识别。");
+  }
+
+  return JSON.parse(normalized.slice(start + 1, end)) as T;
+}
+
+async function fetchTopicApi<T>(path: string, params: Record<string, string | number>) {
+  const searchParams = new URLSearchParams();
+  searchParams.set("callback", "cb");
+
+  for (const [key, value] of Object.entries(params)) {
+    searchParams.set(key, String(value));
+  }
+
+  const text = await fetchText(`${TOPIC_INTERFACE_BASE_URL}/${path}?${searchParams.toString()}`, {
+    headers: {
+      referer: "https://fund.eastmoney.com/ztjj/",
+    },
+  });
+
+  const payload = parseJsonp<EastmoneyJsonpResponse<T>>(text);
+  if (payload.ErrCode !== 0) {
+    throw new Error(payload.ErrMsg || "主题板块接口返回异常。");
+  }
+
+  return payload;
 }
 
 function parseNumber(value: unknown) {
@@ -460,6 +533,127 @@ async function fetchRankRows(config: RankSeedConfig) {
   return items.map(parseRankRow).filter((item) => /^\d{6}$/.test(item.code));
 }
 
+async function fetchTopicBoardCatalog() {
+  const payload = await fetchTopicApi<TopicBoardListPayload>("GetBKListByBKTypeNew", {});
+  const groups: Array<{ key: keyof TopicBoardListPayload; label: TopicBoardGroup }> = [
+    { key: "hy1", label: "行业" },
+    { key: "hy2", label: "行业" },
+    { key: "gn", label: "概念" },
+  ];
+  const map = new Map<string, ScreenerSectorCacheItem>();
+
+  for (const group of groups) {
+    const entries = payload.Data?.[group.key] ?? [];
+    for (const entry of entries) {
+      if (!entry?.INDEXCODE || !entry?.INDEXNAME) {
+        continue;
+      }
+
+      if (!map.has(entry.INDEXCODE)) {
+        map.set(entry.INDEXCODE, {
+          id: entry.INDEXCODE,
+          name: entry.INDEXNAME,
+          count: 0,
+          totalFundCount: null,
+          group: group.label,
+          source: "topic",
+          fundCodes: [],
+        });
+      }
+    }
+  }
+
+  return [...map.values()].sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
+}
+
+async function fetchTopicFundCodes(topicId: string) {
+  const pageSize = 500;
+  const allCodes = new Set<string>();
+  let totalCount = 0;
+  let totalPages = 1;
+
+  for (let pageIndex = 1; pageIndex <= totalPages; pageIndex += 1) {
+    const payload = await fetchTopicApi<TopicFundRelationRow[]>("GetBKRelTopicFundNew", {
+      sort: "SYL_1N",
+      sorttype: "DESC",
+      pageindex: pageIndex,
+      pagesize: pageSize,
+      tp: topicId,
+      isbuy: 0,
+    });
+
+    const rows = Array.isArray(payload.Data) ? payload.Data : [];
+    totalCount = Number(payload.TotalCount ?? rows.length);
+    totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+    for (const row of rows) {
+      if (/^\d{6}$/.test(row.FCODE)) {
+        allCodes.add(row.FCODE);
+      }
+    }
+  }
+
+  return {
+    totalCount,
+    fundCodes: [...allCodes],
+  };
+}
+
+async function buildScreenerSectorCache(items: FundUniverseItem[]): Promise<ScreenerSectorCacheFile> {
+  const topicBoards = await fetchTopicBoardCatalog();
+  const universeCodeSet = new Set(items.map((item) => item.code));
+  const topicItems = await mapWithConcurrency(topicBoards, 6, async (board) => {
+    const relation = await fetchTopicFundCodes(board.id);
+    const matchedCodes = relation.fundCodes.filter((code) => universeCodeSet.has(code));
+
+    return {
+      ...board,
+      count: matchedCodes.length,
+      totalFundCount: relation.totalCount,
+      fundCodes: matchedCodes,
+    } satisfies ScreenerSectorCacheItem;
+  });
+
+  const tagCounter = new Map<string, number>();
+  for (const item of items) {
+    for (const tag of item.sectorTags) {
+      tagCounter.set(tag, (tagCounter.get(tag) ?? 0) + 1);
+    }
+  }
+
+  const tagItems: ScreenerSectorCacheItem[] = [...tagCounter.entries()].map(([name, count]) => ({
+    id: `tag:${name}`,
+    name,
+    count,
+    totalFundCount: count,
+    group: "标签",
+    source: "tag",
+    fundCodes: items.filter((item) => item.sectorTags.includes(name)).map((item) => item.code),
+  }));
+
+  const mergedMap = new Map<string, ScreenerSectorCacheItem>();
+  for (const item of [...topicItems, ...tagItems]) {
+    const key = item.source === "tag" ? `${item.source}:${item.name}` : item.id;
+    mergedMap.set(key, item);
+  }
+
+  const mergedItems = [...mergedMap.values()].sort((left, right) => {
+    if (left.group !== right.group) {
+      const groupWeight = { 行业: 0, 概念: 1, 标签: 2 } as Record<string, number>;
+      return (groupWeight[left.group] ?? 9) - (groupWeight[right.group] ?? 9);
+    }
+
+    return right.count - left.count || (right.totalFundCount ?? 0) - (left.totalFundCount ?? 0) || left.name.localeCompare(right.name, "zh-CN");
+  });
+
+  return {
+    updatedAt: new Date().toISOString(),
+    universeUpdatedAt: new Date().toISOString(),
+    coverageNote: `${DEFAULT_SECTOR_COVERAGE_NOTE} 当前共整理 ${topicBoards.length} 个真实主题板块，并保留 ${tagItems.length} 个本地策略标签。`,
+    items: mergedItems,
+  };
+}
+
 async function mapWithConcurrency<T, R>(items: T[], limit: number, task: (item: T, index: number) => Promise<R>) {
   const results: R[] = new Array(items.length);
   let cursor = 0;
@@ -573,7 +767,7 @@ async function buildUniverseItem(rankRow: RankRow, catalogMap: Map<string, Catal
   }
 }
 
-function isCacheStale(updatedAt: string | null) {
+function isCacheStale(updatedAt: string | null, ttlMs = CACHE_TTL_MS) {
   if (!updatedAt) {
     return true;
   }
@@ -583,7 +777,53 @@ function isCacheStale(updatedAt: string | null) {
     return true;
   }
 
-  return Date.now() - timestamp > CACHE_TTL_MS;
+  return Date.now() - timestamp > ttlMs;
+}
+
+async function getOrRefreshScreenerSectorCache(force = false) {
+  const [sectorCache, fundCache] = await Promise.all([getScreenerSectorCache(), getFundUniverseCache()]);
+  const shouldRefresh =
+    force ||
+    isCacheStale(sectorCache.updatedAt, SECTOR_CACHE_TTL_MS) ||
+    sectorCache.universeUpdatedAt !== fundCache.updatedAt ||
+    sectorCache.items.length === 0;
+
+  if (!shouldRefresh) {
+    return sectorCache;
+  }
+
+  const nextCache = await buildScreenerSectorCache(fundCache.items);
+  nextCache.universeUpdatedAt = fundCache.updatedAt;
+  await saveScreenerSectorCache(nextCache);
+  return nextCache;
+}
+
+async function applySectorFilters(items: FundUniverseItem[], sectors: string[] | undefined) {
+  if (!sectors?.length) {
+    return items;
+  }
+
+  const sectorCache = await getOrRefreshScreenerSectorCache();
+  const sectorMap = new Map<string, ScreenerSectorCacheItem>();
+  for (const item of sectorCache.items) {
+    sectorMap.set(item.id, item);
+    sectorMap.set(item.name, item);
+  }
+
+  let filtered = items;
+  for (const sector of sectors) {
+    const matchedSector = sectorMap.get(sector);
+
+    if (matchedSector) {
+      const fundCodes = new Set(matchedSector.fundCodes);
+      filtered = filtered.filter((item) => fundCodes.has(item.code));
+      continue;
+    }
+
+    filtered = filtered.filter((item) => item.sectorTags.includes(sector) || item.themeTags.includes(sector));
+  }
+
+  return filtered;
 }
 
 function getRankingComparator(ranking: ScreenerRankingKey) {
@@ -633,9 +873,6 @@ function compareBySortPath(left: FundUniverseItem, right: FundUniverseItem, sort
 
 function matchQuery(item: FundUniverseItem, query: ScreenerQueryPayload) {
   if (query.fundTypes?.length && !query.fundTypes.includes(item.category)) {
-    return false;
-  }
-  if (query.sectors?.length && !query.sectors.every((sector) => item.sectorTags.includes(sector))) {
     return false;
   }
   if (query.themes?.length && !query.themes.every((theme) => item.themeTags.includes(theme))) {
@@ -708,13 +945,16 @@ export async function refreshFundUniverseCache() {
   };
 
   await saveFundUniverseCache(payload);
+  const sectorCache = await buildScreenerSectorCache(payload.items);
+  sectorCache.universeUpdatedAt = payload.updatedAt;
+  await saveScreenerSectorCache(sectorCache);
   return payload;
 }
 
 export async function getScreenerOptions(): Promise<ScreenerOptionsResponse> {
-  const cache = await getFundUniverseCache();
-  const sectors = cache.items.length
-    ? [...new Set(cache.items.flatMap((item) => item.sectorTags))].sort((left, right) => left.localeCompare(right, "zh-CN"))
+  const [cache, sectorCache] = await Promise.all([getFundUniverseCache(), getOrRefreshScreenerSectorCache()]);
+  const sectors = sectorCache.items.length
+    ? sectorCache.items.map((item) => item.name)
     : BASE_SECTORS;
   const themes = cache.items.length
     ? [...new Set(cache.items.flatMap((item) => item.themeTags))].sort((left, right) => left.localeCompare(right, "zh-CN"))
@@ -723,7 +963,7 @@ export async function getScreenerOptions(): Promise<ScreenerOptionsResponse> {
   return {
     updatedAt: cache.updatedAt,
     isStale: isCacheStale(cache.updatedAt),
-    coverageNote: cache.coverageNote,
+    coverageNote: `${cache.coverageNote} ${sectorCache.coverageNote}`,
     fundTypes: BASE_FUND_TYPES,
     sectors,
     themes,
@@ -733,7 +973,8 @@ export async function getScreenerOptions(): Promise<ScreenerOptionsResponse> {
 
 export async function queryFundUniverse(query: ScreenerQueryPayload): Promise<ScreenerQueryResult> {
   const cache = await getFundUniverseCache();
-  const filtered = cache.items.filter((item) => matchQuery(item, query));
+  const sectorFiltered = await applySectorFilters(cache.items, query.sectors);
+  const filtered = sectorFiltered.filter((item) => matchQuery(item, query));
 
   const items = [...filtered];
   if (query.ranking) {
@@ -761,18 +1002,8 @@ export async function queryFundUniverse(query: ScreenerQueryPayload): Promise<Sc
 }
 
 export async function getSectorStats(): Promise<ScreenerSectorStat[]> {
-  const cache = await getFundUniverseCache();
-  const counter = new Map<string, number>();
-
-  for (const item of cache.items) {
-    for (const sector of item.sectorTags) {
-      counter.set(sector, (counter.get(sector) ?? 0) + 1);
-    }
-  }
-
-  return [...counter.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "zh-CN"));
+  const cache = await getOrRefreshScreenerSectorCache();
+  return cache.items.filter((item) => item.count > 0 || (item.totalFundCount ?? 0) > 0);
 }
 
 export async function getSectorFunds(sector: string, ranking?: ScreenerRankingKey | null) {

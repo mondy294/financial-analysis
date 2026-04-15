@@ -68,6 +68,19 @@ function isValidNumericInput(value: string) {
   return /^-?\d*(\.\d*)?$/.test(value);
 }
 
+function openEditor(setForm: (updater: (current: HoldingFormState) => HoldingFormState) => void, item: HoldingItem) {
+  setForm(() =>
+    toFormState({
+      code: item.code,
+      status: item.status,
+      holdingReturnRate: item.holdingReturnRate,
+      positionAmount: item.positionAmount,
+      costNav: item.costNav,
+      note: item.note,
+    }),
+  );
+}
+
 export function HoldingsPage({ items, loading, draft, onSave, onDelete, onOpenDetail }: HoldingsPageProps) {
   const [form, setForm] = useState<HoldingFormState>(draft ? toFormState(draft) : emptyForm);
   const [saving, setSaving] = useState(false);
@@ -199,11 +212,11 @@ export function HoldingsPage({ items, loading, draft, onSave, onDelete, onOpenDe
         </form>
       </section>
 
-      <section className="panel table-panel">
+      <section className="panel holdings-list-panel">
         <div className="section-head">
           <div>
             <h3>我的持有</h3>
-            <p>点击基金名称会直接跳去总览页，继续看这只基金的区间走势和净值细节。</p>
+            <p>这页改成卡片式了，仓位、收益率、成本和备注不再挤在一条长表格里，看着终于像个正常页面。</p>
           </div>
           <div className="badge badge-muted">共 {items.length} 条</div>
         </div>
@@ -213,66 +226,67 @@ export function HoldingsPage({ items, loading, draft, onSave, onDelete, onOpenDe
         ) : items.length === 0 ? (
           <div className="empty-state">还没有持有记录。先查一只基金，再把你的仓位信息录进来。</div>
         ) : (
-          <div className="table-shell">
-            <table className="data-table compact-table">
-              <thead>
-                <tr>
-                  <th>基金</th>
-                  <th>状态</th>
-                  <th>手动收益率</th>
-                  <th>持仓金额</th>
-                  <th>成本净值</th>
-                  <th>最新净值</th>
-                  <th>近 1 月</th>
-                  <th>备注</th>
-                  <th>更新时间</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.code}>
-                    <td>
-                      <button type="button" className="link-button" onClick={() => onOpenDetail(item.detail)}>
-                        <strong>{item.detail?.fund.name || item.code}</strong>
-                        <span>{item.code}</span>
-                      </button>
-                    </td>
-                    <td>{item.status}</td>
-                    <td className={signedClass(item.holdingReturnRate)}>{formatPercent(item.holdingReturnRate)}</td>
-                    <td>{formatAmount(item.positionAmount)}</td>
-                    <td>{formatNav(item.costNav)}</td>
-                    <td>{formatNav(item.detail?.fund.latestNav ?? null)}</td>
-                    <td className={signedClass(item.detail?.performance.oneMonth ?? null)}>{formatPercent(item.detail?.performance.oneMonth ?? null)}</td>
-                    <td className="table-note">{item.note || "--"}</td>
-                    <td>{formatDateTime(item.updatedAt)}</td>
-                    <td>
-                      <div className="row-actions">
-                        <button
-                          type="button"
-                          className="inline-button"
-                          onClick={() =>
-                            setForm(toFormState({
-                              code: item.code,
-                              status: item.status,
-                              holdingReturnRate: item.holdingReturnRate,
-                              positionAmount: item.positionAmount,
-                              costNav: item.costNav,
-                              note: item.note,
-                            }))
-                          }
-                        >
-                          编辑
-                        </button>
-                        <button type="button" className="inline-button danger-text" onClick={() => onDelete(item.code)}>
-                          删除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="holding-card-list">
+            {items.map((item) => (
+              <article key={item.code} className="holding-card">
+                <div className="holding-card-head">
+                  <div className="holding-card-title">
+                    <strong>{item.detail?.fund.name || item.code}</strong>
+                    <span>{item.code}</span>
+                  </div>
+                  <div className="badge-wrap">
+                    <span className="badge badge-gold">{item.status}</span>
+                    <span className="badge badge-muted">{formatDateTime(item.updatedAt)}</span>
+                  </div>
+                </div>
+
+                <div className="holding-card-metrics">
+                  <div className="detail-card">
+                    <span>手动收益率</span>
+                    <strong className={signedClass(item.holdingReturnRate)}>{formatPercent(item.holdingReturnRate)}</strong>
+                  </div>
+                  <div className="detail-card">
+                    <span>持仓金额</span>
+                    <strong>{formatAmount(item.positionAmount)}</strong>
+                  </div>
+                  <div className="detail-card">
+                    <span>成本净值</span>
+                    <strong>{formatNav(item.costNav)}</strong>
+                  </div>
+                  <div className="detail-card">
+                    <span>最新净值</span>
+                    <strong>{formatNav(item.detail?.fund.latestNav ?? null)}</strong>
+                  </div>
+                  <div className="detail-card">
+                    <span>近 1 月</span>
+                    <strong className={signedClass(item.detail?.performance.oneMonth ?? null)}>{formatPercent(item.detail?.performance.oneMonth ?? null)}</strong>
+                  </div>
+                  <div className="detail-card">
+                    <span>最新估算涨跌</span>
+                    <strong className={signedClass(item.detail?.fund.estimatedChangeRate ?? null)}>{formatPercent(item.detail?.fund.estimatedChangeRate ?? null)}</strong>
+                  </div>
+                </div>
+
+                <div className="holding-card-note">
+                  <span className="subtle-label">备注</span>
+                  <p>{item.note || "暂无备注。"}</p>
+                </div>
+
+                {item.error ? <div className="empty-inline compact-empty">{item.error}</div> : null}
+
+                <div className="row-actions">
+                  <button type="button" className="inline-button" onClick={() => onOpenDetail(item.detail)}>
+                    查看总览
+                  </button>
+                  <button type="button" className="inline-button" onClick={() => openEditor(setForm, item)}>
+                    编辑仓位
+                  </button>
+                  <button type="button" className="inline-button danger-text" onClick={() => onDelete(item.code)}>
+                    删除
+                  </button>
+                </div>
+              </article>
+            ))}
           </div>
         )}
       </section>

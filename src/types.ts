@@ -177,9 +177,15 @@ export type ScreenerOptionResponse = {
   }>;
 };
 
+export type ScreenerSectorSource = "topic" | "tag";
+
 export type ScreenerSectorStat = {
+  id: string;
   name: string;
   count: number;
+  totalFundCount: number | null;
+  group: string;
+  source: ScreenerSectorSource;
 };
 
 export type ScreenerPreset = {

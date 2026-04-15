@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-04-15T08:08:02.243Z",
+  "updatedAt": "2026-04-15T09:25:23.178Z",
   "coverageNote": "V1 基金池通过东方财富基金排行 rankhandler.aspx 与 fundcode_search.js 交叉构建，优先覆盖主动、指数、纯债、固收+、QDII、FOF 等常见候选。 当前缓存通过 17 组榜单交叉抽样生成，共 208 只候选。",
   "items": [
     {
@@ -300,6 +300,56 @@
       "dataWarnings": []
     },
     {
+      "code": "006555",
+      "name": "浦银安盛全球智能科技(QDII)A",
+      "pinyin": "PUYINANSHENGQUANQIUZHINENGKEJIQDIIA",
+      "rawFundType": "QDII-普通股票",
+      "category": "QDII",
+      "sectorTags": [
+        "科技",
+        "海外"
+      ],
+      "themeTags": [],
+      "establishedDate": "2019-01-29",
+      "latestNavDate": "2026-04-14",
+      "metrics": {
+        "return1w": 11.99,
+        "return1m": 14.87,
+        "return3m": 15.04,
+        "return6m": 23.9,
+        "return1y": 74.15,
+        "returnYtd": 19.78,
+        "returnSinceInception": 204.01,
+        "maxDrawdown1y": -13.22,
+        "volatility1y": 25.64,
+        "feeRate": 0.15,
+        "originalFeeRate": 1.5,
+        "size": 76.0048,
+        "establishedYears": 7.22,
+        "latestNav": 3.0961,
+        "latestDailyGrowthRate": 1.84,
+        "estimatedChangeRate": 0.58,
+        "canBuy": true,
+        "canAutoInvest": true
+      },
+      "score": {
+        "total": 82,
+        "return": 28,
+        "stability": 10,
+        "drawdown": 15,
+        "fee": 10,
+        "management": 9,
+        "health": 10
+      },
+      "rankingSignals": {
+        "value": 96,
+        "core": 50.35,
+        "aggressive": 44.83
+      },
+      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
+      "dataWarnings": []
+    },
+    {
       "code": "000411",
       "name": "景顺长城优质成长股票A",
       "pinyin": "JINGSHUNCHANGCHENGYOUZHICHENGZHANGGUPIAOA",
@@ -344,6 +394,104 @@
         "value": 95,
         "core": 46.85,
         "aggressive": 47.52
+      },
+      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
+      "dataWarnings": []
+    },
+    {
+      "code": "012920",
+      "name": "易方达全球成长精选混合(QDII)人民币A",
+      "pinyin": "YIFANGDAQUANQIUCHENGZHANGJINGXUANHUNHEQDIIRENMINBIA",
+      "rawFundType": "QDII-混合偏股",
+      "category": "QDII",
+      "sectorTags": [
+        "海外"
+      ],
+      "themeTags": [],
+      "establishedDate": "2022-01-11",
+      "latestNavDate": "2026-04-14",
+      "metrics": {
+        "return1w": 11.99,
+        "return1m": 16.54,
+        "return3m": 25.18,
+        "return6m": 40.31,
+        "return1y": 153.89,
+        "returnYtd": 30.08,
+        "returnSinceInception": 225.95,
+        "maxDrawdown1y": -8.84,
+        "volatility1y": 25.65,
+        "feeRate": 0.15,
+        "originalFeeRate": 1.5,
+        "size": 152.69,
+        "establishedYears": 4.26,
+        "latestNav": 3.3019,
+        "latestDailyGrowthRate": 1.3,
+        "estimatedChangeRate": 0.33,
+        "canBuy": true,
+        "canAutoInvest": true
+      },
+      "score": {
+        "total": 81,
+        "return": 30,
+        "stability": 10,
+        "drawdown": 17,
+        "fee": 10,
+        "management": 5,
+        "health": 9
+      },
+      "rankingSignals": {
+        "value": 95.8,
+        "core": 52.85,
+        "aggressive": 50.69
+      },
+      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
+      "dataWarnings": []
+    },
+    {
+      "code": "012922",
+      "name": "易方达全球成长精选混合(QDII)人民币C",
+      "pinyin": "YIFANGDAQUANQIUCHENGZHANGJINGXUANHUNHEQDIIRENMINBIC",
+      "rawFundType": "QDII-混合偏股",
+      "category": "QDII",
+      "sectorTags": [
+        "海外"
+      ],
+      "themeTags": [],
+      "establishedDate": "2022-01-11",
+      "latestNavDate": "2026-04-14",
+      "metrics": {
+        "return1w": 11.98,
+        "return1m": 16.49,
+        "return3m": 25.03,
+        "return6m": 39.95,
+        "return1y": 152.69,
+        "returnYtd": 29.9,
+        "returnSinceInception": 220.03,
+        "maxDrawdown1y": -8.85,
+        "volatility1y": 25.64,
+        "feeRate": 0,
+        "originalFeeRate": 0,
+        "size": 151.4778,
+        "establishedYears": 4.26,
+        "latestNav": 3.2418,
+        "latestDailyGrowthRate": 1.3,
+        "estimatedChangeRate": 0.33,
+        "canBuy": true,
+        "canAutoInvest": false
+      },
+      "score": {
+        "total": 81,
+        "return": 30,
+        "stability": 10,
+        "drawdown": 17,
+        "fee": 10,
+        "management": 5,
+        "health": 9
+      },
+      "rankingSignals": {
+        "value": 95.8,
+        "core": 52.85,
+        "aggressive": 50.63
       },
       "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
       "dataWarnings": []
@@ -444,6 +592,104 @@
         "aggressive": 43
       },
       "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
+      "dataWarnings": []
+    },
+    {
+      "code": "013287",
+      "name": "易方达优势价值一年持有混合(FOF)A",
+      "pinyin": "YIFANGDAYOUSHIJIAZHIYINIANCHIYOUHUNHEFOFA",
+      "rawFundType": "FOF-均衡型",
+      "category": "FOF",
+      "sectorTags": [
+        "其他"
+      ],
+      "themeTags": [],
+      "establishedDate": "2021-08-24",
+      "latestNavDate": "2026-04-14",
+      "metrics": {
+        "return1w": 7.81,
+        "return1m": 6.32,
+        "return3m": 10.46,
+        "return6m": 22.58,
+        "return1y": 70.48,
+        "returnYtd": 14.58,
+        "returnSinceInception": 37.25,
+        "maxDrawdown1y": -9.55,
+        "volatility1y": 21.33,
+        "feeRate": 0.12,
+        "originalFeeRate": 1.2,
+        "size": 71.4553,
+        "establishedYears": 4.65,
+        "latestNav": 1.3725,
+        "latestDailyGrowthRate": 1.59,
+        "estimatedChangeRate": -0.74,
+        "canBuy": true,
+        "canAutoInvest": true
+      },
+      "score": {
+        "total": 80,
+        "return": 26,
+        "stability": 12,
+        "drawdown": 17,
+        "fee": 10,
+        "management": 6,
+        "health": 9
+      },
+      "rankingSignals": {
+        "value": 94.8,
+        "core": 53.25,
+        "aggressive": 35.92
+      },
+      "scoreSummary": "费率和回撤控制都不差，属于更均衡、更省心的一档。",
+      "dataWarnings": []
+    },
+    {
+      "code": "013288",
+      "name": "易方达优势价值一年持有混合(FOF)C",
+      "pinyin": "YIFANGDAYOUSHIJIAZHIYINIANCHIYOUHUNHEFOFC",
+      "rawFundType": "FOF-均衡型",
+      "category": "FOF",
+      "sectorTags": [
+        "其他"
+      ],
+      "themeTags": [],
+      "establishedDate": "2021-08-24",
+      "latestNavDate": "2026-04-14",
+      "metrics": {
+        "return1w": 7.8,
+        "return1m": 6.29,
+        "return3m": 10.35,
+        "return6m": 22.34,
+        "return1y": 69.79,
+        "returnYtd": 14.45,
+        "returnSinceInception": 34.73,
+        "maxDrawdown1y": -9.57,
+        "volatility1y": 21.34,
+        "feeRate": 0,
+        "originalFeeRate": 0,
+        "size": 70.7821,
+        "establishedYears": 4.65,
+        "latestNav": 1.3473,
+        "latestDailyGrowthRate": 1.6,
+        "estimatedChangeRate": -0.74,
+        "canBuy": true,
+        "canAutoInvest": false
+      },
+      "score": {
+        "total": 80,
+        "return": 26,
+        "stability": 12,
+        "drawdown": 17,
+        "fee": 10,
+        "management": 6,
+        "health": 9
+      },
+      "rankingSignals": {
+        "value": 94.8,
+        "core": 53.25,
+        "aggressive": 35.88
+      },
+      "scoreSummary": "费率和回撤控制都不差，属于更均衡、更省心的一档。",
       "dataWarnings": []
     },
     {
@@ -1255,7 +1501,7 @@
         "feeRate": 0.15,
         "originalFeeRate": 1.5,
         "size": 137.2072,
-        "establishedYears": 5.66,
+        "establishedYears": 5.67,
         "latestNav": 2.6636,
         "latestDailyGrowthRate": 1.04,
         "estimatedChangeRate": -0.85,
@@ -1479,99 +1725,99 @@
       "dataWarnings": []
     },
     {
-      "code": "013287",
-      "name": "易方达优势价值一年持有混合(FOF)A",
-      "pinyin": "YIFANGDAYOUSHIJIAZHIYINIANCHIYOUHUNHEFOFA",
-      "rawFundType": "FOF-均衡型",
-      "category": "FOF",
+      "code": "018229",
+      "name": "易方达全球优质企业混合(QDII)A(人民币份额)",
+      "pinyin": "YIFANGDAQUANQIUYOUZHIQIYEHUNHEQDIIARENMINBIFENE",
+      "rawFundType": "QDII-混合偏股",
+      "category": "QDII",
       "sectorTags": [
-        "其他"
+        "海外"
       ],
       "themeTags": [],
-      "establishedDate": "2021-08-24",
+      "establishedDate": "2023-10-31",
       "latestNavDate": "2026-04-14",
       "metrics": {
-        "return1w": 6.79,
-        "return1m": 4.66,
-        "return3m": 9.55,
-        "return6m": 16.23,
-        "return1y": 68.81,
-        "returnYtd": 12.78,
-        "returnSinceInception": 35.1,
-        "maxDrawdown1y": -9.55,
-        "volatility1y": 21.33,
-        "feeRate": 0.12,
-        "originalFeeRate": 1.2,
-        "size": 71.4553,
-        "establishedYears": 4.65,
-        "latestNav": 1.3725,
-        "latestDailyGrowthRate": 1.59,
-        "estimatedChangeRate": -0.74,
+        "return1w": 11.56,
+        "return1m": 10.17,
+        "return3m": 17.07,
+        "return6m": 27.47,
+        "return1y": 89.56,
+        "returnYtd": 22.91,
+        "returnSinceInception": 86.3,
+        "maxDrawdown1y": -9.24,
+        "volatility1y": 21.83,
+        "feeRate": 0.15,
+        "originalFeeRate": 1.5,
+        "size": 83.9092,
+        "establishedYears": 2.46,
+        "latestNav": 1.863,
+        "latestDailyGrowthRate": 1.88,
+        "estimatedChangeRate": 0.28,
         "canBuy": true,
         "canAutoInvest": true
       },
       "score": {
         "total": 78,
-        "return": 25,
-        "stability": 11,
+        "return": 29,
+        "stability": 12,
         "drawdown": 17,
         "fee": 10,
-        "management": 6,
-        "health": 9
+        "management": 3,
+        "health": 7
       },
       "rankingSignals": {
         "value": 92.8,
-        "core": 51.7,
-        "aggressive": 34.03
+        "core": 53.6,
+        "aggressive": 45.46
       },
       "scoreSummary": "费率和回撤控制都不差，属于更均衡、更省心的一档。",
       "dataWarnings": []
     },
     {
-      "code": "013288",
-      "name": "易方达优势价值一年持有混合(FOF)C",
-      "pinyin": "YIFANGDAYOUSHIJIAZHIYINIANCHIYOUHUNHEFOFC",
-      "rawFundType": "FOF-均衡型",
-      "category": "FOF",
+      "code": "018230",
+      "name": "易方达全球优质企业混合(QDII)C(人民币份额)",
+      "pinyin": "YIFANGDAQUANQIUYOUZHIQIYEHUNHEQDIICRENMINBIFENE",
+      "rawFundType": "QDII-混合偏股",
+      "category": "QDII",
       "sectorTags": [
-        "其他"
+        "海外"
       ],
       "themeTags": [],
-      "establishedDate": "2021-08-24",
+      "establishedDate": "2023-10-31",
       "latestNavDate": "2026-04-14",
       "metrics": {
-        "return1w": 6.78,
-        "return1m": 4.62,
-        "return3m": 9.44,
-        "return6m": 15.98,
-        "return1y": 68.14,
-        "returnYtd": 12.65,
-        "returnSinceInception": 32.61,
-        "maxDrawdown1y": -9.57,
-        "volatility1y": 21.34,
+        "return1w": 11.55,
+        "return1m": 10.12,
+        "return3m": 16.93,
+        "return6m": 27.16,
+        "return1y": 88.48,
+        "returnYtd": 22.75,
+        "returnSinceInception": 83.86,
+        "maxDrawdown1y": -9.27,
+        "volatility1y": 21.82,
         "feeRate": 0,
         "originalFeeRate": 0,
-        "size": 70.7821,
-        "establishedYears": 4.65,
-        "latestNav": 1.3473,
-        "latestDailyGrowthRate": 1.6,
-        "estimatedChangeRate": -0.74,
+        "size": 82.8725,
+        "establishedYears": 2.46,
+        "latestNav": 1.8386,
+        "latestDailyGrowthRate": 1.88,
+        "estimatedChangeRate": 0.28,
         "canBuy": true,
         "canAutoInvest": false
       },
       "score": {
         "total": 78,
-        "return": 25,
-        "stability": 11,
+        "return": 29,
+        "stability": 12,
         "drawdown": 17,
         "fee": 10,
-        "management": 6,
-        "health": 9
+        "management": 3,
+        "health": 7
       },
       "rankingSignals": {
         "value": 92.8,
-        "core": 51.7,
-        "aggressive": 33.99
+        "core": 53.6,
+        "aggressive": 45.41
       },
       "scoreSummary": "费率和回撤控制都不差，属于更均衡、更省心的一档。",
       "dataWarnings": []
@@ -2171,6 +2417,56 @@
       "dataWarnings": []
     },
     {
+      "code": "014002",
+      "name": "浦银安盛全球智能科技(QDII)C",
+      "pinyin": "PUYINANSHENGQUANQIUZHINENGKEJIQDIIC",
+      "rawFundType": "QDII-普通股票",
+      "category": "QDII",
+      "sectorTags": [
+        "科技",
+        "海外"
+      ],
+      "themeTags": [],
+      "establishedDate": "2021-11-03",
+      "latestNavDate": "2026-04-14",
+      "metrics": {
+        "return1w": 11.98,
+        "return1m": 14.84,
+        "return3m": 14.93,
+        "return6m": 23.66,
+        "return1y": 73.36,
+        "returnYtd": 19.65,
+        "returnSinceInception": 75.75,
+        "maxDrawdown1y": -13.25,
+        "volatility1y": 25.62,
+        "feeRate": 0,
+        "originalFeeRate": 0,
+        "size": 75.2136,
+        "establishedYears": 4.45,
+        "latestNav": 3.0347,
+        "latestDailyGrowthRate": 1.84,
+        "estimatedChangeRate": 0.58,
+        "canBuy": true,
+        "canAutoInvest": false
+      },
+      "score": {
+        "total": 77,
+        "return": 28,
+        "stability": 10,
+        "drawdown": 15,
+        "fee": 10,
+        "management": 5,
+        "health": 9
+      },
+      "rankingSignals": {
+        "value": 91,
+        "core": 49.85,
+        "aggressive": 44.79
+      },
+      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
+      "dataWarnings": []
+    },
+    {
       "code": "006502",
       "name": "财通集成电路产业股票A",
       "pinyin": "CAITONGJICHENGDIANLUCHANYEGUPIAOA",
@@ -2616,56 +2912,6 @@
       "dataWarnings": []
     },
     {
-      "code": "006555",
-      "name": "浦银安盛全球智能科技(QDII)A",
-      "pinyin": "PUYINANSHENGQUANQIUZHINENGKEJIQDIIA",
-      "rawFundType": "QDII-普通股票",
-      "category": "QDII",
-      "sectorTags": [
-        "科技",
-        "海外"
-      ],
-      "themeTags": [],
-      "establishedDate": "2019-01-29",
-      "latestNavDate": "2026-04-13",
-      "metrics": {
-        "return1w": 11.99,
-        "return1m": 14.87,
-        "return3m": 15.04,
-        "return6m": 23.9,
-        "return1y": 74.15,
-        "returnYtd": 19.78,
-        "returnSinceInception": 204.01,
-        "maxDrawdown1y": -13.22,
-        "volatility1y": 25.64,
-        "feeRate": 0.15,
-        "originalFeeRate": 1.5,
-        "size": null,
-        "establishedYears": 7.22,
-        "latestNav": 3.0401,
-        "latestDailyGrowthRate": 0.96,
-        "estimatedChangeRate": 0.58,
-        "canBuy": true,
-        "canAutoInvest": true
-      },
-      "score": {
-        "total": 76,
-        "return": 28,
-        "stability": 10,
-        "drawdown": 15,
-        "fee": 10,
-        "management": 9,
-        "health": 4
-      },
-      "rankingSignals": {
-        "value": 90,
-        "core": 47.35,
-        "aggressive": 44.83
-      },
-      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
-      "dataWarnings": []
-    },
-    {
       "code": "457001",
       "name": "国富亚洲机会股票(QDII)A",
       "pinyin": "GUOFUYAZHOUJIHUIGUPIAOQDIIA",
@@ -2963,99 +3209,197 @@
       "dataWarnings": []
     },
     {
-      "code": "012920",
-      "name": "易方达全球成长精选混合(QDII)人民币A",
-      "pinyin": "YIFANGDAQUANQIUCHENGZHANGJINGXUANHUNHEQDIIRENMINBIA",
-      "rawFundType": "QDII-混合偏股",
-      "category": "QDII",
+      "code": "015083",
+      "name": "易方达优势驱动一年持有混合(FOF)A",
+      "pinyin": "YIFANGDAYOUSHIQUDONGYINIANCHIYOUHUNHEFOFA",
+      "rawFundType": "FOF-进取型",
+      "category": "FOF",
       "sectorTags": [
-        "海外"
+        "其他"
       ],
       "themeTags": [],
-      "establishedDate": "2022-01-11",
-      "latestNavDate": "2026-04-13",
+      "establishedDate": "2022-09-06",
+      "latestNavDate": "2026-04-14",
       "metrics": {
-        "return1w": 11.99,
-        "return1m": 16.54,
-        "return3m": 25.18,
-        "return6m": 40.31,
-        "return1y": 153.89,
-        "returnYtd": 30.08,
-        "returnSinceInception": 225.95,
-        "maxDrawdown1y": -8.84,
-        "volatility1y": 25.65,
-        "feeRate": 0.15,
-        "originalFeeRate": 1.5,
-        "size": null,
-        "establishedYears": 4.26,
-        "latestNav": 3.2595,
-        "latestDailyGrowthRate": 0.98,
-        "estimatedChangeRate": 0.33,
+        "return1w": 8.83,
+        "return1m": 6.51,
+        "return3m": 9.22,
+        "return6m": 22.41,
+        "return1y": 80.4,
+        "returnYtd": 13.68,
+        "returnSinceInception": 54.46,
+        "maxDrawdown1y": -11.6,
+        "volatility1y": 24.38,
+        "feeRate": 0.12,
+        "originalFeeRate": 1.2,
+        "size": 81.5681,
+        "establishedYears": 3.61,
+        "latestNav": 1.5446,
+        "latestDailyGrowthRate": 1.76,
+        "estimatedChangeRate": -0.86,
         "canBuy": true,
         "canAutoInvest": true
       },
       "score": {
         "total": 75,
-        "return": 30,
-        "stability": 10,
-        "drawdown": 17,
+        "return": 26,
+        "stability": 11,
+        "drawdown": 16,
         "fee": 10,
-        "management": 5,
-        "health": 3
+        "management": 4,
+        "health": 8
       },
       "rankingSignals": {
-        "value": 89.8,
-        "core": 49.85,
-        "aggressive": 50.69
+        "value": 89.4,
+        "core": 50.6,
+        "aggressive": 35.59
       },
       "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
       "dataWarnings": []
     },
     {
-      "code": "012922",
-      "name": "易方达全球成长精选混合(QDII)人民币C",
-      "pinyin": "YIFANGDAQUANQIUCHENGZHANGJINGXUANHUNHEQDIIRENMINBIC",
-      "rawFundType": "QDII-混合偏股",
-      "category": "QDII",
+      "code": "015084",
+      "name": "易方达优势驱动一年持有混合(FOF)C",
+      "pinyin": "YIFANGDAYOUSHIQUDONGYINIANCHIYOUHUNHEFOFC",
+      "rawFundType": "FOF-进取型",
+      "category": "FOF",
       "sectorTags": [
-        "海外"
+        "其他"
       ],
       "themeTags": [],
-      "establishedDate": "2022-01-11",
-      "latestNavDate": "2026-04-13",
+      "establishedDate": "2022-09-06",
+      "latestNavDate": "2026-04-14",
       "metrics": {
-        "return1w": 11.98,
-        "return1m": 16.49,
-        "return3m": 25.03,
-        "return6m": 39.95,
-        "return1y": 152.69,
-        "returnYtd": 29.9,
-        "returnSinceInception": 220.03,
-        "maxDrawdown1y": -8.85,
-        "volatility1y": 25.64,
+        "return1w": 8.82,
+        "return1m": 6.48,
+        "return3m": 9.14,
+        "return6m": 22.23,
+        "return1y": 79.87,
+        "returnYtd": 13.59,
+        "returnSinceInception": 52.8,
+        "maxDrawdown1y": -11.61,
+        "volatility1y": 24.38,
         "feeRate": 0,
         "originalFeeRate": 0,
-        "size": null,
-        "establishedYears": 4.26,
-        "latestNav": 3.2003,
-        "latestDailyGrowthRate": 0.98,
-        "estimatedChangeRate": 0.33,
+        "size": 81.0427,
+        "establishedYears": 3.61,
+        "latestNav": 1.528,
+        "latestDailyGrowthRate": 1.76,
+        "estimatedChangeRate": -0.86,
         "canBuy": true,
         "canAutoInvest": false
       },
       "score": {
         "total": 75,
-        "return": 30,
-        "stability": 10,
-        "drawdown": 17,
+        "return": 26,
+        "stability": 11,
+        "drawdown": 16,
         "fee": 10,
-        "management": 5,
-        "health": 3
+        "management": 4,
+        "health": 8
       },
       "rankingSignals": {
-        "value": 89.8,
-        "core": 49.85,
-        "aggressive": 50.63
+        "value": 89.4,
+        "core": 50.6,
+        "aggressive": 35.56
+      },
+      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
+      "dataWarnings": []
+    },
+    {
+      "code": "012652",
+      "name": "易方达优势领航六个月持有混合(FOF)A",
+      "pinyin": "YIFANGDAYOUSHILINGHANGLIUGEYUECHIYOUHUNHEFOFA",
+      "rawFundType": "FOF-进取型",
+      "category": "FOF",
+      "sectorTags": [
+        "其他"
+      ],
+      "themeTags": [],
+      "establishedDate": "2021-12-10",
+      "latestNavDate": "2026-04-14",
+      "metrics": {
+        "return1w": 8.63,
+        "return1m": 5.91,
+        "return3m": 8.54,
+        "return6m": 21.87,
+        "return1y": 80.99,
+        "returnYtd": 12.84,
+        "returnSinceInception": 51.31,
+        "maxDrawdown1y": -12.27,
+        "volatility1y": 24.39,
+        "feeRate": 0.12,
+        "originalFeeRate": 1.2,
+        "size": 82.2353,
+        "establishedYears": 4.35,
+        "latestNav": 1.5131,
+        "latestDailyGrowthRate": 1.64,
+        "estimatedChangeRate": -0.86,
+        "canBuy": true,
+        "canAutoInvest": true
+      },
+      "score": {
+        "total": 75,
+        "return": 25,
+        "stability": 11,
+        "drawdown": 15,
+        "fee": 10,
+        "management": 5,
+        "health": 9
+      },
+      "rankingSignals": {
+        "value": 89,
+        "core": 49.6,
+        "aggressive": 34.04
+      },
+      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
+      "dataWarnings": []
+    },
+    {
+      "code": "012653",
+      "name": "易方达优势领航六个月持有混合(FOF)C",
+      "pinyin": "YIFANGDAYOUSHILINGHANGLIUGEYUECHIYOUHUNHEFOFC",
+      "rawFundType": "FOF-进取型",
+      "category": "FOF",
+      "sectorTags": [
+        "其他"
+      ],
+      "themeTags": [],
+      "establishedDate": "2021-12-10",
+      "latestNavDate": "2026-04-14",
+      "metrics": {
+        "return1w": 8.62,
+        "return1m": 5.88,
+        "return3m": 8.46,
+        "return6m": 21.68,
+        "return1y": 80.46,
+        "returnYtd": 12.74,
+        "returnSinceInception": 49.35,
+        "maxDrawdown1y": -12.29,
+        "volatility1y": 24.38,
+        "feeRate": 0,
+        "originalFeeRate": 0,
+        "size": 81.691,
+        "establishedYears": 4.35,
+        "latestNav": 1.4935,
+        "latestDailyGrowthRate": 1.64,
+        "estimatedChangeRate": -0.86,
+        "canBuy": true,
+        "canAutoInvest": false
+      },
+      "score": {
+        "total": 75,
+        "return": 25,
+        "stability": 11,
+        "drawdown": 15,
+        "fee": 10,
+        "management": 5,
+        "health": 9
+      },
+      "rankingSignals": {
+        "value": 89,
+        "core": 49.6,
+        "aggressive": 34.01
       },
       "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
       "dataWarnings": []
@@ -3800,104 +4144,6 @@
       "dataWarnings": []
     },
     {
-      "code": "012652",
-      "name": "易方达优势领航六个月持有混合(FOF)A",
-      "pinyin": "YIFANGDAYOUSHILINGHANGLIUGEYUECHIYOUHUNHEFOFA",
-      "rawFundType": "FOF-进取型",
-      "category": "FOF",
-      "sectorTags": [
-        "其他"
-      ],
-      "themeTags": [],
-      "establishedDate": "2021-12-10",
-      "latestNavDate": "2026-04-14",
-      "metrics": {
-        "return1w": 7.71,
-        "return1m": 4.21,
-        "return3m": 7.71,
-        "return6m": 15.06,
-        "return1y": 79.47,
-        "returnYtd": 11.02,
-        "returnSinceInception": 48.87,
-        "maxDrawdown1y": -12.27,
-        "volatility1y": 24.4,
-        "feeRate": 0.12,
-        "originalFeeRate": 1.2,
-        "size": 82.2353,
-        "establishedYears": 4.35,
-        "latestNav": 1.5131,
-        "latestDailyGrowthRate": 1.64,
-        "estimatedChangeRate": -0.86,
-        "canBuy": true,
-        "canAutoInvest": true
-      },
-      "score": {
-        "total": 74,
-        "return": 25,
-        "stability": 10,
-        "drawdown": 15,
-        "fee": 10,
-        "management": 5,
-        "health": 9
-      },
-      "rankingSignals": {
-        "value": 88,
-        "core": 48.5,
-        "aggressive": 33.37
-      },
-      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
-      "dataWarnings": []
-    },
-    {
-      "code": "012653",
-      "name": "易方达优势领航六个月持有混合(FOF)C",
-      "pinyin": "YIFANGDAYOUSHILINGHANGLIUGEYUECHIYOUHUNHEFOFC",
-      "rawFundType": "FOF-进取型",
-      "category": "FOF",
-      "sectorTags": [
-        "其他"
-      ],
-      "themeTags": [],
-      "establishedDate": "2021-12-10",
-      "latestNavDate": "2026-04-14",
-      "metrics": {
-        "return1w": 7.7,
-        "return1m": 4.18,
-        "return3m": 7.62,
-        "return6m": 14.89,
-        "return1y": 78.93,
-        "returnYtd": 10.92,
-        "returnSinceInception": 46.94,
-        "maxDrawdown1y": -12.29,
-        "volatility1y": 24.39,
-        "feeRate": 0,
-        "originalFeeRate": 0,
-        "size": 81.691,
-        "establishedYears": 4.35,
-        "latestNav": 1.4935,
-        "latestDailyGrowthRate": 1.64,
-        "estimatedChangeRate": -0.86,
-        "canBuy": true,
-        "canAutoInvest": false
-      },
-      "score": {
-        "total": 74,
-        "return": 25,
-        "stability": 10,
-        "drawdown": 15,
-        "fee": 10,
-        "management": 5,
-        "health": 9
-      },
-      "rankingSignals": {
-        "value": 88,
-        "core": 48.5,
-        "aggressive": 33.33
-      },
-      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
-      "dataWarnings": []
-    },
-    {
       "code": "013845",
       "name": "中信建投睿选6个月持有混合(FOF)C",
       "pinyin": "ZHONGXINJIANTOURUIXUAN6GEYUECHIYOUHUNHEFOFC",
@@ -4533,104 +4779,6 @@
         "aggressive": 36.08
       },
       "scoreSummary": "费率和回撤控制都不差，属于更均衡、更省心的一档。",
-      "dataWarnings": []
-    },
-    {
-      "code": "015083",
-      "name": "易方达优势驱动一年持有混合(FOF)A",
-      "pinyin": "YIFANGDAYOUSHIQUDONGYINIANCHIYOUHUNHEFOFA",
-      "rawFundType": "FOF-进取型",
-      "category": "FOF",
-      "sectorTags": [
-        "其他"
-      ],
-      "themeTags": [],
-      "establishedDate": "2022-09-06",
-      "latestNavDate": "2026-04-14",
-      "metrics": {
-        "return1w": 7.73,
-        "return1m": 4.67,
-        "return3m": 8.3,
-        "return6m": 15.4,
-        "return1y": 78.7,
-        "returnYtd": 11.72,
-        "returnSinceInception": 51.79,
-        "maxDrawdown1y": -11.6,
-        "volatility1y": 24.38,
-        "feeRate": 0.12,
-        "originalFeeRate": 1.2,
-        "size": 81.5681,
-        "establishedYears": 3.61,
-        "latestNav": 1.5446,
-        "latestDailyGrowthRate": 1.76,
-        "estimatedChangeRate": -0.86,
-        "canBuy": true,
-        "canAutoInvest": true
-      },
-      "score": {
-        "total": 73,
-        "return": 25,
-        "stability": 10,
-        "drawdown": 16,
-        "fee": 10,
-        "management": 4,
-        "health": 8
-      },
-      "rankingSignals": {
-        "value": 87.4,
-        "core": 49.05,
-        "aggressive": 33.66
-      },
-      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
-      "dataWarnings": []
-    },
-    {
-      "code": "015084",
-      "name": "易方达优势驱动一年持有混合(FOF)C",
-      "pinyin": "YIFANGDAYOUSHIQUDONGYINIANCHIYOUHUNHEFOFC",
-      "rawFundType": "FOF-进取型",
-      "category": "FOF",
-      "sectorTags": [
-        "其他"
-      ],
-      "themeTags": [],
-      "establishedDate": "2022-09-06",
-      "latestNavDate": "2026-04-14",
-      "metrics": {
-        "return1w": 7.72,
-        "return1m": 4.64,
-        "return3m": 8.22,
-        "return6m": 15.23,
-        "return1y": 78.17,
-        "returnYtd": 11.63,
-        "returnSinceInception": 50.16,
-        "maxDrawdown1y": -11.61,
-        "volatility1y": 24.38,
-        "feeRate": 0,
-        "originalFeeRate": 0,
-        "size": 81.0427,
-        "establishedYears": 3.61,
-        "latestNav": 1.528,
-        "latestDailyGrowthRate": 1.76,
-        "estimatedChangeRate": -0.86,
-        "canBuy": true,
-        "canAutoInvest": false
-      },
-      "score": {
-        "total": 73,
-        "return": 25,
-        "stability": 10,
-        "drawdown": 16,
-        "fee": 10,
-        "management": 4,
-        "health": 8
-      },
-      "rankingSignals": {
-        "value": 87.4,
-        "core": 49.05,
-        "aggressive": 33.63
-      },
-      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
       "dataWarnings": []
     },
     {
@@ -5624,56 +5772,6 @@
       "dataWarnings": []
     },
     {
-      "code": "014002",
-      "name": "浦银安盛全球智能科技(QDII)C",
-      "pinyin": "PUYINANSHENGQUANQIUZHINENGKEJIQDIIC",
-      "rawFundType": "QDII-普通股票",
-      "category": "QDII",
-      "sectorTags": [
-        "科技",
-        "海外"
-      ],
-      "themeTags": [],
-      "establishedDate": "2021-11-03",
-      "latestNavDate": "2026-04-13",
-      "metrics": {
-        "return1w": 11.98,
-        "return1m": 14.84,
-        "return3m": 14.93,
-        "return6m": 23.66,
-        "return1y": 73.36,
-        "returnYtd": 19.65,
-        "returnSinceInception": 75.75,
-        "maxDrawdown1y": -13.25,
-        "volatility1y": 25.62,
-        "feeRate": 0,
-        "originalFeeRate": 0,
-        "size": null,
-        "establishedYears": 4.45,
-        "latestNav": 2.9799,
-        "latestDailyGrowthRate": 0.96,
-        "estimatedChangeRate": 0.58,
-        "canBuy": true,
-        "canAutoInvest": false
-      },
-      "score": {
-        "total": 71,
-        "return": 28,
-        "stability": 10,
-        "drawdown": 15,
-        "fee": 10,
-        "management": 5,
-        "health": 3
-      },
-      "rankingSignals": {
-        "value": 85,
-        "core": 46.85,
-        "aggressive": 44.79
-      },
-      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
-      "dataWarnings": []
-    },
-    {
       "code": "017730",
       "name": "嘉实全球产业升级股票发起式(QDII)A",
       "pinyin": "JIASHIQUANQIUCHANYESHENGJIGUPIAOFAQISHIQDIIA",
@@ -5769,104 +5867,6 @@
         "aggressive": 44.06
       },
       "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
-      "dataWarnings": []
-    },
-    {
-      "code": "018229",
-      "name": "易方达全球优质企业混合(QDII)A(人民币份额)",
-      "pinyin": "YIFANGDAQUANQIUYOUZHIQIYEHUNHEQDIIARENMINBIFENE",
-      "rawFundType": "QDII-混合偏股",
-      "category": "QDII",
-      "sectorTags": [
-        "海外"
-      ],
-      "themeTags": [],
-      "establishedDate": "2023-10-31",
-      "latestNavDate": "2026-04-13",
-      "metrics": {
-        "return1w": 9.94,
-        "return1m": 8.14,
-        "return3m": 14.58,
-        "return6m": 22.68,
-        "return1y": 87.51,
-        "returnYtd": 20.64,
-        "returnSinceInception": 82.86,
-        "maxDrawdown1y": -9.24,
-        "volatility1y": 21.81,
-        "feeRate": 0.15,
-        "originalFeeRate": 1.5,
-        "size": null,
-        "establishedYears": 2.46,
-        "latestNav": 1.8286,
-        "latestDailyGrowthRate": 0.24,
-        "estimatedChangeRate": 0.28,
-        "canBuy": true,
-        "canAutoInvest": true
-      },
-      "score": {
-        "total": 71,
-        "return": 28,
-        "stability": 12,
-        "drawdown": 17,
-        "fee": 10,
-        "management": 3,
-        "health": 1
-      },
-      "rankingSignals": {
-        "value": 85.8,
-        "core": 50.15,
-        "aggressive": 43.01
-      },
-      "scoreSummary": "费率和回撤控制都不差，属于更均衡、更省心的一档。",
-      "dataWarnings": []
-    },
-    {
-      "code": "018230",
-      "name": "易方达全球优质企业混合(QDII)C(人民币份额)",
-      "pinyin": "YIFANGDAQUANQIUYOUZHIQIYEHUNHEQDIICRENMINBIFENE",
-      "rawFundType": "QDII-混合偏股",
-      "category": "QDII",
-      "sectorTags": [
-        "海外"
-      ],
-      "themeTags": [],
-      "establishedDate": "2023-10-31",
-      "latestNavDate": "2026-04-13",
-      "metrics": {
-        "return1w": 9.93,
-        "return1m": 8.09,
-        "return3m": 14.44,
-        "return6m": 22.39,
-        "return1y": 86.44,
-        "returnYtd": 20.48,
-        "returnSinceInception": 80.47,
-        "maxDrawdown1y": -9.27,
-        "volatility1y": 21.8,
-        "feeRate": 0,
-        "originalFeeRate": 0,
-        "size": null,
-        "establishedYears": 2.46,
-        "latestNav": 1.8047,
-        "latestDailyGrowthRate": 0.23,
-        "estimatedChangeRate": 0.28,
-        "canBuy": true,
-        "canAutoInvest": false
-      },
-      "score": {
-        "total": 71,
-        "return": 28,
-        "stability": 12,
-        "drawdown": 17,
-        "fee": 10,
-        "management": 3,
-        "health": 1
-      },
-      "rankingSignals": {
-        "value": 85.8,
-        "core": 50.15,
-        "aggressive": 42.95
-      },
-      "scoreSummary": "费率和回撤控制都不差，属于更均衡、更省心的一档。",
       "dataWarnings": []
     },
     {
@@ -6436,7 +6436,7 @@
         "feeRate": 0.12,
         "originalFeeRate": 1.2,
         "size": 33.5011,
-        "establishedYears": 4.29,
+        "establishedYears": 4.3,
         "latestNav": 0.8751,
         "latestDailyGrowthRate": 1.83,
         "estimatedChangeRate": -0.47,
@@ -6975,7 +6975,7 @@
         "feeRate": 0.1,
         "originalFeeRate": 1,
         "size": 53.4,
-        "establishedYears": 0.86,
+        "establishedYears": 0.87,
         "latestNav": 1.534,
         "latestDailyGrowthRate": -1,
         "estimatedChangeRate": -1.78,
@@ -7024,7 +7024,7 @@
         "feeRate": 0,
         "originalFeeRate": 0,
         "size": 53.13,
-        "establishedYears": 0.86,
+        "establishedYears": 0.87,
         "latestNav": 1.5313,
         "latestDailyGrowthRate": -1,
         "estimatedChangeRate": -1.78,
@@ -7866,7 +7866,7 @@
         "feeRate": 0.12,
         "originalFeeRate": 1.2,
         "size": 182.1435,
-        "establishedYears": 1.66,
+        "establishedYears": 1.67,
         "latestNav": 3.1854,
         "latestDailyGrowthRate": 1.67,
         "estimatedChangeRate": -1.21,
@@ -7916,7 +7916,7 @@
         "feeRate": 0,
         "originalFeeRate": 0,
         "size": 181.5965,
-        "establishedYears": 1.66,
+        "establishedYears": 1.67,
         "latestNav": 3.175,
         "latestDailyGrowthRate": 1.67,
         "estimatedChangeRate": -1.21,
@@ -9729,6 +9729,58 @@
       "dataWarnings": []
     },
     {
+      "code": "008284",
+      "name": "易方达全球医药行业混合发起式(QDII)A(人民币)",
+      "pinyin": "YIFANGDAQUANQIUYIYAOHANGYEHUNHEFAQISHIQDIIARENMINBI",
+      "rawFundType": "QDII-混合偏股",
+      "category": "QDII",
+      "sectorTags": [
+        "医疗",
+        "海外"
+      ],
+      "themeTags": [
+        "创新药"
+      ],
+      "establishedDate": "2020-01-20",
+      "latestNavDate": "2026-04-14",
+      "metrics": {
+        "return1w": -1.03,
+        "return1m": 14.92,
+        "return3m": -0.08,
+        "return6m": -1.24,
+        "return1y": 64.26,
+        "returnYtd": 12.06,
+        "returnSinceInception": 38.13,
+        "maxDrawdown1y": -27.49,
+        "volatility1y": 37.83,
+        "feeRate": 0.15,
+        "originalFeeRate": 1.5,
+        "size": 57.6141,
+        "establishedYears": 6.24,
+        "latestNav": 1.3952,
+        "latestDailyGrowthRate": 1.01,
+        "estimatedChangeRate": null,
+        "canBuy": true,
+        "canAutoInvest": true
+      },
+      "score": {
+        "total": 60,
+        "return": 24,
+        "stability": 1,
+        "drawdown": 7,
+        "fee": 10,
+        "management": 8,
+        "health": 10
+      },
+      "rankingSignals": {
+        "value": 70.8,
+        "core": 30.25,
+        "aggressive": 35.51
+      },
+      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
+      "dataWarnings": []
+    },
+    {
       "code": "021266",
       "name": "中信保诚稳悦债券D",
       "pinyin": "ZHONGXINBAOCHENGWENYUEZHAIQUAND",
@@ -9979,9 +10031,9 @@
       "dataWarnings": []
     },
     {
-      "code": "008284",
-      "name": "易方达全球医药行业混合发起式(QDII)A(人民币)",
-      "pinyin": "YIFANGDAQUANQIUYIYAOHANGYEHUNHEFAQISHIQDIIARENMINBI",
+      "code": "019035",
+      "name": "易方达全球医药行业混合发起式(QDII)C(人民币)",
+      "pinyin": "YIFANGDAQUANQIUYIYAOHANGYEHUNHEFAQISHIQDIICRENMINBI",
       "rawFundType": "QDII-混合偏股",
       "category": "QDII",
       "sectorTags": [
@@ -9991,41 +10043,41 @@
       "themeTags": [
         "创新药"
       ],
-      "establishedDate": "2020-01-20",
-      "latestNavDate": "2026-04-13",
+      "establishedDate": "2023-11-15",
+      "latestNavDate": "2026-04-14",
       "metrics": {
-        "return1w": -1.03,
-        "return1m": 14.92,
-        "return3m": -0.08,
-        "return6m": -1.24,
-        "return1y": 64.26,
-        "returnYtd": 12.06,
-        "returnSinceInception": 38.13,
-        "maxDrawdown1y": -27.49,
-        "volatility1y": 37.83,
-        "feeRate": 0.15,
-        "originalFeeRate": 1.5,
-        "size": null,
-        "establishedYears": 6.24,
-        "latestNav": 1.3813,
-        "latestDailyGrowthRate": -0.93,
+        "return1w": -0.04,
+        "return1m": 16.03,
+        "return3m": 0.96,
+        "return6m": 4.07,
+        "return1y": 60.62,
+        "returnYtd": 13.08,
+        "returnSinceInception": 55.74,
+        "maxDrawdown1y": -27.56,
+        "volatility1y": 37.76,
+        "feeRate": 0,
+        "originalFeeRate": 0,
+        "size": 58.0726,
+        "establishedYears": 2.42,
+        "latestNav": 1.3844,
+        "latestDailyGrowthRate": 1.01,
         "estimatedChangeRate": null,
         "canBuy": true,
-        "canAutoInvest": true
+        "canAutoInvest": false
       },
       "score": {
-        "total": 54,
+        "total": 53,
         "return": 24,
-        "stability": 1,
+        "stability": 2,
         "drawdown": 7,
         "fee": 10,
-        "management": 8,
-        "health": 4
+        "management": 3,
+        "health": 7
       },
       "rankingSignals": {
-        "value": 64.8,
-        "core": 27.25,
-        "aggressive": 35.51
+        "value": 63.8,
+        "core": 29.85,
+        "aggressive": 36.1
       },
       "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
       "dataWarnings": []
@@ -10182,58 +10234,6 @@
         "aggressive": 25.84
       },
       "scoreSummary": "费率和回撤控制都不差，属于更均衡、更省心的一档。",
-      "dataWarnings": []
-    },
-    {
-      "code": "019035",
-      "name": "易方达全球医药行业混合发起式(QDII)C(人民币)",
-      "pinyin": "YIFANGDAQUANQIUYIYAOHANGYEHUNHEFAQISHIQDIICRENMINBI",
-      "rawFundType": "QDII-混合偏股",
-      "category": "QDII",
-      "sectorTags": [
-        "医疗",
-        "海外"
-      ],
-      "themeTags": [
-        "创新药"
-      ],
-      "establishedDate": "2023-11-15",
-      "latestNavDate": "2026-04-13",
-      "metrics": {
-        "return1w": -1.04,
-        "return1m": 14.88,
-        "return3m": -0.17,
-        "return6m": -1.4,
-        "return1y": 64.76,
-        "returnYtd": 11.95,
-        "returnSinceInception": 54.19,
-        "maxDrawdown1y": -27.56,
-        "volatility1y": 37.83,
-        "feeRate": 0,
-        "originalFeeRate": 0,
-        "size": null,
-        "establishedYears": 2.42,
-        "latestNav": 1.3706,
-        "latestDailyGrowthRate": -0.93,
-        "estimatedChangeRate": null,
-        "canBuy": true,
-        "canAutoInvest": false
-      },
-      "score": {
-        "total": 46,
-        "return": 24,
-        "stability": 1,
-        "drawdown": 7,
-        "fee": 10,
-        "management": 3,
-        "health": 1
-      },
-      "rankingSignals": {
-        "value": 56.8,
-        "core": 25.75,
-        "aggressive": 35.47
-      },
-      "scoreSummary": "收益冲得更猛，但波动也更大，适合高风险偏好的进攻型观察。",
       "dataWarnings": []
     },
     {
