@@ -56,13 +56,22 @@ npm run dev
 
 - 前端管理台：`http://localhost:4177`
 - API 服务：`http://localhost:4176`
-- 股票 MCP 服务：`http://127.0.0.1:4178/mcp`
+- Financial MCP 服务：`http://127.0.0.1:4178/mcp`
 - MCP 健康检查：`http://127.0.0.1:4178/health`
 
 ### MCP 已暴露工具
 
 - `get_realtime_stock_quotes`：批量查询股票最新价、涨跌额、涨跌幅
 - `get_fund_holding_stocks`：查询基金最新披露持仓股，并补齐实时涨跌
+- `get_fund_analysis`：按基金编号获取净值、区间走势、5/10/20/60 日均线、阶段收益、波动回撤、重仓股和本地持仓
+- `get_my_fund_holding`：按基金编号查询我的当前本地持仓，并补充净值、估值和盈亏测算
+- `list_my_fund_holdings`：列出本地全部基金持仓和组合汇总
+- `get_fund_screener_options`：获取基金筛选器选项、主题、行业概念和排行榜定义
+- `query_fund_universe`：按收益、回撤、波动、费率、主题等条件筛选基金池
+- `get_fund_sectors`：获取基金池中有数据的行业、概念和标签统计
+- `get_sector_funds`：查看某个行业/概念/标签下的基金列表
+- `refresh_fund_universe_cache`：主动刷新基金池和行业概念缓存
+
 
 ## 数据说明
 

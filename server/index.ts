@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getCompareList, getHoldings, getWatchlist, saveCompareList, saveHoldings, saveWatchlist } from "./data-store.js";
 import { getFundPerformance } from "./fund-service.js";
-import { startStockMcpServer } from "./mcp/index.js";
+import { startFinancialMcpServer } from "./mcp/index.js";
 import {
   deleteScreenerPreset,
   getScreenerOptions,
@@ -327,4 +327,4 @@ app.listen(port, () => {
   console.log(`Financial API server is running at http://localhost:${port}`);
 });
 
-startStockMcpServer();
+startFinancialMcpServer();

@@ -255,3 +255,96 @@ export type EnrichedCompareItem = PersistedCompareItem & {
   screener: FundUniverseItem | null;
   error: string | null;
 };
+
+export type FundTrendSignal = "多头排列" | "空头排列" | "震荡整理" | "数据不足";
+
+export type FundTrendAnalysisPoint = {
+  date: string;
+  nav: number;
+  rangeReturn: number;
+  ma5: number | null;
+  ma10: number | null;
+  ma20: number | null;
+  ma60: number | null;
+};
+
+export type FundTrendAnalysis = {
+  windowDays: number;
+  startDate: string | null;
+  endDate: string | null;
+  points: FundTrendAnalysisPoint[];
+  latest: {
+    date: string;
+    nav: number;
+    ma5: number | null;
+    ma10: number | null;
+    ma20: number | null;
+    ma60: number | null;
+    biasToMa10: number | null;
+    biasToMa20: number | null;
+    biasToMa60: number | null;
+    signal: FundTrendSignal;
+  };
+  returns: {
+    range: number | null;
+    day5: number | null;
+    day10: number | null;
+    day20: number | null;
+    day60: number | null;
+    day120: number | null;
+    day250: number | null;
+  };
+  risk: {
+    maxDrawdown30d: number | null;
+    maxDrawdown90d: number | null;
+    maxDrawdown1y: number | null;
+    volatility30d: number | null;
+    volatility90d: number | null;
+    volatility1y: number | null;
+  };
+};
+
+export type FundHoldingSnapshot = {
+  code: string;
+  fundName: string | null;
+  status: string;
+  holdingReturnRate: number | null;
+  positionAmount: number | null;
+  costNav: number | null;
+  note: string;
+  updatedAt: string;
+  positionShares: number | null;
+  latestNav: number | null;
+  latestNavDate: string | null;
+  estimatedNav: number | null;
+  estimateTime: string | null;
+  currentMarketValue: number | null;
+  estimatedMarketValue: number | null;
+  currentProfitAmount: number | null;
+  currentProfitRate: number | null;
+  estimatedProfitAmount: number | null;
+  estimatedProfitRate: number | null;
+};
+
+export type FundHoldingPortfolioResponse = {
+  items: FundHoldingSnapshot[];
+  summary: {
+    holdingsCount: number;
+    totalPositionAmount: number | null;
+    totalCurrentMarketValue: number | null;
+    totalEstimatedMarketValue: number | null;
+    totalCurrentProfitAmount: number | null;
+    totalEstimatedProfitAmount: number | null;
+  };
+};
+
+export type FundAnalysisResponse = {
+  fund: FundMeta;
+  performance: FundPerformanceSummary;
+  navHistory: FundNavHistoryItem[];
+  stockHoldings: FundHoldingStock[];
+  stockHoldingsReportDate: string | null;
+  trendAnalysis: FundTrendAnalysis;
+  screener: FundUniverseItem | null;
+  myHolding: FundHoldingSnapshot | null;
+};
