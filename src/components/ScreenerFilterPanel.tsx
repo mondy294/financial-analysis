@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { ScreenerFundCategory, ScreenerQueryPayload } from "../types";
 
 type ScreenerFilterPanelProps = {
@@ -40,12 +41,19 @@ export function ScreenerFilterPanel({
   isStale,
   coverageNote,
 }: ScreenerFilterPanelProps) {
+  const [showAllThemes, setShowAllThemes] = useState(false);
+
+  const visibleThemes = useMemo(() => {
+    const merged = Array.from(new Set([...(query.themes ?? []), ...themes]));
+    return showAllThemes ? merged : merged.slice(0, 18);
+  }, [query.themes, showAllThemes, themes]);
+
   return (
     <section className="panel screener-filter-panel">
       <div className="section-head compact-head">
         <div>
           <h3>筛选器</h3>
-          <p>先做可解释筛选，不猜你想买什么。条件在这，结果也得对得上。</p>
+          <p>这里专门负责调条件。应用之后，中间基金列表会按当前筛选和数据源重新取数。</p>
         </div>
         <button type="button" className="secondary-button" disabled={refreshing} onClick={() => void onRefresh()}>
           {refreshing ? "刷新中..." : "刷新基金池"}
@@ -87,7 +95,7 @@ export function ScreenerFilterPanel({
       <div className="filter-section">
         <span className="filter-title">主题标签</span>
         <div className="chip-check-row">
-          {themes.slice(0, 14).map((item) => {
+          {visibleThemes.map((item) => {
             const active = query.themes?.includes(item) ?? false;
             return (
               <button
@@ -109,6 +117,11 @@ export function ScreenerFilterPanel({
             );
           })}
         </div>
+        {themes.length > 18 ? (
+          <button type="button" className="ghost-chip filter-more-button" onClick={() => setShowAllThemes((current) => !current)}>
+            {showAllThemes ? "收起主题标签" : `展开更多主题（剩余 ${Math.max(themes.length - visibleThemes.length, 0)} 个）`}
+          </button>
+        ) : null}
       </div>
 
       <div className="filter-grid compact-filter-grid">
@@ -163,9 +176,9 @@ export function ScreenerFilterPanel({
         <span>仅看可定投</span>
       </label>
 
-      <div className="form-actions">
+      <div className="form-actions screener-filter-actions">
         <button type="button" className="primary-button" onClick={onSubmit}>
-          应用筛选
+          应用到列表
         </button>
         <button type="button" className="secondary-button" onClick={onReset}>
           重置条件
@@ -174,3 +187,4 @@ export function ScreenerFilterPanel({
     </section>
   );
 }
+

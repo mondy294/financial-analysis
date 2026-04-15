@@ -12,6 +12,34 @@ export type FundNavHistoryItem = {
   redemptionStatus: string | null;
 };
 
+export type FundHoldingStock = {
+  code: string;
+  name: string;
+  exchange: string | null;
+  latestPrice: number | null;
+  changeRate: number | null;
+  changeAmount: number | null;
+  navRatio: number | null;
+  holdingSharesWan: number | null;
+  holdingMarketValueWan: number | null;
+};
+
+export type StockQuoteSnapshot = {
+  code: string;
+  name: string | null;
+  exchange: string | null;
+  secId: string;
+  latestPrice: number | null;
+  changeRate: number | null;
+  changeAmount: number | null;
+};
+
+export type FundHoldingStocksLookupResponse = {
+  fundCode: string;
+  reportDate: string | null;
+  items: FundHoldingStock[];
+};
+
 export type FundPerformanceSummary = {
   oneWeek: number | null;
   oneMonth: number | null;
@@ -45,6 +73,8 @@ export type FundDetailResponse = {
   performance: FundPerformanceSummary;
   navHistory: FundNavHistoryItem[];
   trend: FundTrendPoint[];
+  stockHoldings: FundHoldingStock[];
+  stockHoldingsReportDate: string | null;
 };
 
 export type PersistedWatchlistItem = {

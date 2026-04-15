@@ -1,3 +1,4 @@
+import { getFundHoldingStocks } from "./stock-service.js";
 import type { FundDetailResponse, FundTrendPoint } from "./types.js";
 
 type RawTrendPoint = {
@@ -149,7 +150,7 @@ async function requestFundPerformance(code: string): Promise<FundDetailResponse>
   const estimateUrl = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${timestamp}`;
   const historyUrl = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=1&pageSize=30`;
 
-  const [detailText, estimateText, historyPayload] = await Promise.all([
+  const [detailText, estimateText, historyPayload, holdingStocksPayload] = await Promise.all([
     fetchText(detailUrl, {
       headers: {
         referer: `https://fundf10.eastmoney.com/jbgk_${code}.html`,
@@ -165,6 +166,7 @@ async function requestFundPerformance(code: string): Promise<FundDetailResponse>
         referer: `https://fundf10.eastmoney.com/jjjz_${code}.html`,
       },
     }),
+    getFundHoldingStocks(code).catch(() => ({ fundCode: code, reportDate: null, items: [] })),
   ]);
 
   const fundName = extractQuotedVar(detailText, "fS_name");
@@ -207,6 +209,8 @@ async function requestFundPerformance(code: string): Promise<FundDetailResponse>
     .map((item) => item.unitNav)
     .filter((value): value is number => value !== null);
 
+  const stockHoldings = holdingStocksPayload.items;
+
   return {
     fund: {
       code,
@@ -236,6 +240,8 @@ async function requestFundPerformance(code: string): Promise<FundDetailResponse>
     },
     navHistory,
     trend,
+    stockHoldings,
+    stockHoldingsReportDate: holdingStocksPayload.reportDate,
   };
 }
 

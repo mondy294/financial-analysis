@@ -24,6 +24,7 @@ type ChartPanelProps = {
 };
 
 type OverlayKey = "nav" | "cost" | "ma5" | "ma10" | "ma20" | "ma60" | "bollUpper" | "bollLower";
+type AxisMode = "nav" | "percent";
 
 use([LineChart, GridComponent, LegendComponent, MarkPointComponent, TooltipComponent, CanvasRenderer]);
 
@@ -53,17 +54,42 @@ function getDefaultOverlayState(hasCostLine: boolean): Record<OverlayKey, boolea
   return {
     nav: true,
     cost: hasCostLine,
-    ma5: true,
-    ma10: true,
-    ma20: true,
-    ma60: true,
-    bollUpper: true,
-    bollLower: true,
+    ma5: false,
+    ma10: false,
+    ma20: false,
+    ma60: false,
+    bollUpper: false,
+    bollLower: false,
   };
+}
+
+function toPercentChange(value: number | null | undefined, base: number | null | undefined) {
+  if (value === null || value === undefined || base === null || base === undefined || !Number.isFinite(base) || base === 0) {
+    return null;
+  }
+
+  return Number((((value - base) / base) * 100).toFixed(2));
+}
+
+function projectValueByMode(value: number | null | undefined, mode: AxisMode, base: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (mode === "percent") {
+    return toPercentChange(value, base);
+  }
+
+  return Number(value.toFixed(4));
+}
+
+function formatAxisLabel(value: number, mode: AxisMode) {
+  return mode === "percent" ? `${Number(value).toFixed(2)}%` : Number(value).toFixed(4);
 }
 
 export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
   const [activeRange, setActiveRange] = useState<ChartRange>("3M");
+  const [axisMode, setAxisMode] = useState<AxisMode>("percent");
   const hasCostLine = costNav !== null && Number.isFinite(costNav);
   const [overlayVisibility, setOverlayVisibility] = useState<Record<OverlayKey, boolean>>(() => getDefaultOverlayState(hasCostLine));
 
@@ -88,6 +114,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
   );
   const rangeReturn = useMemo(() => calculateRangeReturn(chartPoints), [chartPoints]);
   const insights = useMemo(() => calculateTrendInsights(filteredPoints, costNav), [filteredPoints, costNav]);
+  const firstNav = chartPoints[0]?.nav ?? null;
 
   const indicatorCards = useMemo(
     () => [
@@ -112,37 +139,43 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
     }
 
     const seriesValueBuckets: number[] = [];
+    const project = (value: number | null | undefined) => projectValueByMode(value, axisMode, firstNav);
 
     if (overlayVisibility.nav) {
-      seriesValueBuckets.push(...chartPoints.map((item) => item.nav));
+      seriesValueBuckets.push(...chartPoints.map((item) => project(item.nav)).filter((value): value is number => value !== null));
     }
     if (overlayVisibility.ma5) {
-      seriesValueBuckets.push(...chartPoints.map((item) => item.ma5).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...chartPoints.map((item) => project(item.ma5)).filter((value): value is number => value !== null));
     }
     if (overlayVisibility.ma10) {
-      seriesValueBuckets.push(...chartPoints.map((item) => item.ma10).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...chartPoints.map((item) => project(item.ma10)).filter((value): value is number => value !== null));
     }
     if (overlayVisibility.ma20) {
-      seriesValueBuckets.push(...chartPoints.map((item) => item.ma20).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...chartPoints.map((item) => project(item.ma20)).filter((value): value is number => value !== null));
     }
     if (overlayVisibility.ma60) {
-      seriesValueBuckets.push(...chartPoints.map((item) => item.ma60).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...chartPoints.map((item) => project(item.ma60)).filter((value): value is number => value !== null));
     }
     if (overlayVisibility.bollUpper) {
-      seriesValueBuckets.push(...chartPoints.map((item) => item.bollUpper).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...chartPoints.map((item) => project(item.bollUpper)).filter((value): value is number => value !== null));
     }
     if (overlayVisibility.bollLower) {
-      seriesValueBuckets.push(...chartPoints.map((item) => item.bollLower).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...chartPoints.map((item) => project(item.bollLower)).filter((value): value is number => value !== null));
     }
     if (hasCostLine && overlayVisibility.cost && costNav !== null) {
-      seriesValueBuckets.push(Number(costNav));
+      const projectedCost = project(costNav);
+      if (projectedCost !== null) {
+        seriesValueBuckets.push(projectedCost);
+      }
     }
 
-    const allValues = seriesValueBuckets.length > 0 ? seriesValueBuckets : chartPoints.map((item) => item.nav);
+    const fallbackValues = chartPoints.map((item) => project(item.nav)).filter((value): value is number => value !== null);
+    const allValues = seriesValueBuckets.length > 0 ? seriesValueBuckets : fallbackValues;
     const min = Math.min(...allValues);
     const max = Math.max(...allValues);
-    const spread = Math.max(max - min, 0.01);
-    const firstNav = chartPoints[0]?.nav ?? null;
+    const spread = Math.max(max - min, axisMode === "percent" ? 0.2 : 0.004);
+    const axisPadding = spread * (axisMode === "percent" ? 0.04 : 0.035);
+
 
     return {
       backgroundColor: "transparent",
@@ -192,14 +225,17 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             ? (point as { dataIndex?: number }).dataIndex ?? 0
             : 0;
           const current = chartPoints[dataIndex];
-          const drift = firstNav && current?.nav ? Number((((current.nav - firstNav) / firstNav) * 100).toFixed(2)) : null;
+          const drift = toPercentChange(current?.nav ?? null, firstNav);
+          const axisValue = project(current?.nav ?? null);
           const deviationFromMa20 = current?.nav && current.ma20 ? Number((((current.nav - current.ma20) / current.ma20) * 100).toFixed(2)) : null;
           const deviationFromCost = current?.nav && hasCostLine && costNav ? Number((((current.nav - costNav) / costNav) * 100).toFixed(2)) : null;
 
           return [
             `<div style="font-weight:600;margin-bottom:6px;">悬浮点坐标</div>`,
             `<div>横轴（日期）：${current?.date ?? "--"}</div>`,
-            `<div>纵轴（单位净值）：${formatNav(current?.nav ?? null)}</div>`,
+            `<div>纵轴（${axisMode === "percent" ? "涨跌幅" : "单位净值"}）：${axisValue === null ? "--" : formatAxisLabel(axisValue, axisMode)}</div>`,
+            `<div>单位净值：${formatNav(current?.nav ?? null)}</div>`,
+            `<div>区间涨跌：${formatPercent(drift)}</div>`,
             `<div style="margin-top:6px;opacity:0.82;">均线 / 带宽</div>`,
             `<div>MA5：${formatNav(current?.ma5 ?? null)}</div>`,
             `<div>MA10：${formatNav(current?.ma10 ?? null)}</div>`,
@@ -208,8 +244,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             `<div>BOLL 上轨：${formatNav(current?.bollUpper ?? null)}</div>`,
             `<div>BOLL 下轨：${formatNav(current?.bollLower ?? null)}</div>`,
             ...(hasCostLine ? [`<div>成本线：${formatNav(costNav)}</div>`] : []),
-            `<div style="margin-top:6px;opacity:0.82;">区间判断</div>`,
-            `<div>区间涨跌：${formatPercent(drift)}</div>`,
+            `<div style="margin-top:6px;opacity:0.82;">位置判断</div>`,
             `<div>相对 MA20：${formatPercent(deviationFromMa20)}</div>`,
             ...(hasCostLine ? [`<div>相对成本：${formatPercent(deviationFromCost)}</div>`] : []),
           ].join("");
@@ -218,8 +253,8 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
       grid: {
         left: 18,
         right: 18,
-        top: 54,
-        bottom: 32,
+        top: 46,
+        bottom: 20,
         containLabel: true,
       },
       xAxis: {
@@ -241,8 +276,13 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
       },
       yAxis: {
         type: "value",
-        min: Number((min - spread * 0.08).toFixed(4)),
-        max: Number((max + spread * 0.08).toFixed(4)),
+        name: axisMode === "percent" ? "涨跌幅" : "单位净值",
+        nameTextStyle: {
+          color: "#95a7c7",
+          padding: [0, 0, 0, 6],
+        },
+        min: Number((min - axisPadding).toFixed(axisMode === "percent" ? 2 : 4)),
+        max: Number((max + axisPadding).toFixed(axisMode === "percent" ? 2 : 4)),
         splitLine: {
           lineStyle: {
             color: "rgba(148, 163, 184, 0.12)",
@@ -251,14 +291,14 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
         },
         axisLabel: {
           color: "#95a7c7",
-          formatter: (value: number) => Number(value).toFixed(4),
+          formatter: (value: number) => formatAxisLabel(value, axisMode),
         },
       },
       series: [
         {
           name: "单位净值",
           type: "line",
-          smooth: 0.22,
+          smooth: false,
           showSymbol: false,
           symbolSize: 8,
           emphasis: {
@@ -301,7 +341,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
               { type: "min", name: "区间低点", valueDim: "y", label: { formatter: "低" } },
             ],
           },
-          data: chartPoints.map((item) => Number(item.nav.toFixed(4))),
+          data: chartPoints.map((item) => project(item.nav)),
         },
         ...(hasCostLine && costNav !== null
           ? [{
@@ -313,49 +353,49 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
                 type: "dotted" as const,
                 color: "#fb7185",
               },
-              data: chartPoints.map(() => Number(costNav.toFixed(4))),
+              data: chartPoints.map(() => project(costNav)),
             }]
           : []),
         {
           name: "MA5",
           type: "line",
-          smooth: 0.16,
+          smooth: false,
           showSymbol: false,
           connectNulls: false,
           lineStyle: {
             width: 2,
             color: "#22d3ee",
           },
-          data: chartPoints.map((item) => item.ma5),
+          data: chartPoints.map((item) => project(item.ma5)),
         },
         {
           name: "MA10",
           type: "line",
-          smooth: 0.14,
+          smooth: false,
           showSymbol: false,
           connectNulls: false,
           lineStyle: {
             width: 2,
             color: "#f59e0b",
           },
-          data: chartPoints.map((item) => item.ma10),
+          data: chartPoints.map((item) => project(item.ma10)),
         },
         {
           name: "MA20",
           type: "line",
-          smooth: 0.12,
+          smooth: false,
           showSymbol: false,
           connectNulls: false,
           lineStyle: {
             width: 2,
             color: "#34d399",
           },
-          data: chartPoints.map((item) => item.ma20),
+          data: chartPoints.map((item) => project(item.ma20)),
         },
         {
           name: "MA60",
           type: "line",
-          smooth: 0.08,
+          smooth: false,
           showSymbol: false,
           connectNulls: false,
           lineStyle: {
@@ -363,12 +403,12 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             type: "dashed",
             color: "#a78bfa",
           },
-          data: chartPoints.map((item) => item.ma60),
+          data: chartPoints.map((item) => project(item.ma60)),
         },
         {
           name: "BOLL 上轨",
           type: "line",
-          smooth: 0.12,
+          smooth: false,
           showSymbol: false,
           connectNulls: false,
           lineStyle: {
@@ -377,12 +417,12 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             color: "#f472b6",
             opacity: 0.92,
           },
-          data: chartPoints.map((item) => item.bollUpper),
+          data: chartPoints.map((item) => project(item.bollUpper)),
         },
         {
           name: "BOLL 下轨",
           type: "line",
-          smooth: 0.12,
+          smooth: false,
           showSymbol: false,
           connectNulls: false,
           lineStyle: {
@@ -391,11 +431,11 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             color: "#c084fc",
             opacity: 0.92,
           },
-          data: chartPoints.map((item) => item.bollLower),
+          data: chartPoints.map((item) => project(item.bollLower)),
         },
       ],
     };
-  }, [chartPoints, costNav, hasCostLine, overlayVisibility]);
+  }, [axisMode, chartPoints, costNav, firstNav, hasCostLine, overlayVisibility]);
 
   function toggleOverlay(key: OverlayKey) {
     if (key === "cost" && !hasCostLine) {
@@ -445,22 +485,33 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
       <div className="section-head chart-header">
         <div>
           <h3>区间业绩图 + 技术指标</h3>
-          <p>这次把 MA5、MA10、MA20、MA60、布林带和持有成本线都叠进去了。上方开关和图例都能控制显隐，悬浮时直接看日期和净值坐标，不用再盲猜。</p>
+          <p>默认先看更清晰的主折线，图表高度和绘图区都进一步加大了；想看涨跌起伏时会更直观，技术指标也可以按需再打开。</p>
         </div>
         <div className={`range-return ${signedClass(rangeReturn)}`}>{formatPercent(rangeReturn)}</div>
       </div>
 
-      <div className="range-tabs">
-        {RANGE_OPTIONS.map((optionItem) => (
-          <button
-            key={optionItem.key}
-            type="button"
-            className={optionItem.key === activeRange ? "active" : ""}
-            onClick={() => setActiveRange(optionItem.key)}
-          >
-            {optionItem.label}
+      <div className="chart-toolbar">
+        <div className="range-tabs">
+          {RANGE_OPTIONS.map((optionItem) => (
+            <button
+              key={optionItem.key}
+              type="button"
+              className={optionItem.key === activeRange ? "active" : ""}
+              onClick={() => setActiveRange(optionItem.key)}
+            >
+              {optionItem.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="axis-mode-toggle">
+          <button type="button" className={axisMode === "percent" ? "active" : ""} onClick={() => setAxisMode("percent")}>
+            涨跌幅
           </button>
-        ))}
+          <button type="button" className={axisMode === "nav" ? "active" : ""} onClick={() => setAxisMode("nav")}>
+            单位净值
+          </button>
+        </div>
       </div>
 
       <div className="overlay-toggle-row spaced-top">
@@ -501,10 +552,11 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
       <div className="chart-footer">
         <span>{chartPoints[0]?.date}</span>
         <span>
-          区间最低 {formatNav(min)} / 最高 {formatNav(max)}
+          区间最低 {formatNav(min)} / 最高 {formatNav(max)} · 区间涨跌 {formatPercent(rangeReturn)}
         </span>
         <span>{chartPoints.at(-1)?.date}</span>
       </div>
     </section>
   );
 }
+

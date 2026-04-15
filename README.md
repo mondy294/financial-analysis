@@ -15,7 +15,8 @@
 ## 技术栈
 
 - 前端：React 18 + TypeScript + Vite + React Router + ECharts
-- 服务端：Node.js + Express + TypeScript
+- 服务端：Node.js + Express + Koa + TypeScript
+- MCP：Koa + `@modelcontextprotocol/server` + `@modelcontextprotocol/node`
 - 数据来源：天天基金 / 东方财富公开页面接口
 - 持久化：项目内 JSON 文件（`data/watchlist.json`、`data/holdings.json`）
 
@@ -23,12 +24,19 @@
 
 ```text
 financial/
-├── data/                  # 自选与持有 JSON 持久化数据
-├── server/                # Express API、基金聚合与持久化仓储
+├── data/                  # 自选、持有、筛选缓存等 JSON 持久化数据
+├── server/
+│   ├── mcp/               # Koa + MCP 股票工具暴露层
+│   ├── data-store.ts      # 本地 JSON 读写仓储
+│   ├── fund-service.ts    # 基金详情聚合服务
+│   ├── screener-service.ts# 基金筛选与主题板块服务
+│   ├── stock-service.ts   # 股票实时行情与基金持仓股服务
+│   └── index.ts           # Express API 主入口，同时拉起 MCP 服务
 ├── src/
 │   ├── api/               # 前端 API 请求封装
 │   ├── components/        # 查询卡片、走势组件、基金详情卡等
 │   ├── pages/             # 总览 / 我的自选 / 我的持有 路由页面
+│   ├── skills/            # 项目内技能与提示词资产
 │   ├── utils/             # 格式化与区间筛选工具
 │   ├── App.tsx            # 管理台壳层、导航和路由
 │   └── main.tsx           # React 入口
@@ -48,6 +56,13 @@ npm run dev
 
 - 前端管理台：`http://localhost:4177`
 - API 服务：`http://localhost:4176`
+- 股票 MCP 服务：`http://127.0.0.1:4178/mcp`
+- MCP 健康检查：`http://127.0.0.1:4178/health`
+
+### MCP 已暴露工具
+
+- `get_realtime_stock_quotes`：批量查询股票最新价、涨跌额、涨跌幅
+- `get_fund_holding_stocks`：查询基金最新披露持仓股，并补齐实时涨跌
 
 ## 数据说明
 

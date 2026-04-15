@@ -1,4 +1,4 @@
-import type { FundDetailResponse, HoldingItem } from "../types";
+import type { FundDetailResponse, FundHoldingStock, HoldingItem } from "../types";
 import { formatAmount, formatDateTime, formatNav, formatPercent, signedClass } from "../utils/fund";
 import { ChartPanel } from "./ChartPanel";
 
@@ -21,6 +21,36 @@ const performanceCards = [
   { label: "成立以来", key: "sinceInception" },
 ] as const;
 
+const stockNumberFormatter = new Intl.NumberFormat("zh-CN", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function formatStockNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "--";
+  }
+
+  return stockNumberFormatter.format(Number(value));
+}
+
+function formatSignedStockNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "--";
+  }
+
+  const numeric = Number(value);
+  return `${numeric > 0 ? "+" : ""}${stockNumberFormatter.format(numeric)}`;
+}
+
+function formatHoldingShares(value: FundHoldingStock["holdingSharesWan"]) {
+  return value === null || value === undefined ? "--" : `${stockNumberFormatter.format(value)} 万股`;
+}
+
+function formatHoldingMarketValue(value: FundHoldingStock["holdingMarketValueWan"]) {
+  return value === null || value === undefined ? "--" : `${stockNumberFormatter.format(value)} 万元`;
+}
+
 export function FundSummaryCard({
   detail,
   inWatchlist,
@@ -29,7 +59,7 @@ export function FundSummaryCard({
   onRemoveWatchlist,
   onUseForHolding,
 }: FundSummaryCardProps) {
-  const { fund, performance, navHistory } = detail;
+  const { fund, performance, navHistory, stockHoldings, stockHoldingsReportDate } = detail;
 
   return (
     <div className="content-grid">
@@ -140,6 +170,59 @@ export function FundSummaryCard({
             <strong>{formatNav(performance.lowestRecentNav)} - {formatNav(performance.highestRecentNav)}</strong>
           </article>
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-head">
+          <div>
+            <h3>持仓股票观察表</h3>
+            <p>持仓结构按基金最近一次披露的季报展示，列表里的价格和涨跌幅使用股票实时行情，方便你直接看基金到底在涨什么、跌什么。</p>
+          </div>
+          <div className="badge-wrap">
+            <span className="badge badge-muted">{stockHoldingsReportDate ? `持仓截止 ${stockHoldingsReportDate}` : "暂无持仓披露"}</span>
+          </div>
+        </div>
+
+        {stockHoldings.length === 0 ? (
+          <div className="empty-state compact-empty">这只基金暂时没有可展示的股票持仓，可能是基金类型不适用，或者最新季报尚未披露。</div>
+        ) : (
+          <>
+            <div className="section-note">说明：持仓占比、持股数、持仓市值来自基金定期报告；最新价、涨跌额、涨跌幅来自股票实时行情。</div>
+            <div className="table-shell">
+              <table className="data-table compact-table holding-stock-table">
+                <thead>
+                  <tr>
+                    <th>股票</th>
+                    <th className="align-right">最新价</th>
+                    <th className="align-right">涨跌额</th>
+                    <th className="align-right">涨跌幅</th>
+                    <th className="align-right">占净值比例</th>
+                    <th className="align-right">持股数</th>
+                    <th className="align-right">持仓市值</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockHoldings.map((item) => (
+                    <tr key={`${item.code}-${item.exchange ?? "NA"}`}>
+                      <td>
+                        <div className="holding-stock-cell">
+                          <strong>{item.name}</strong>
+                          <span>{item.code}{item.exchange ? `.${item.exchange}` : ""}</span>
+                        </div>
+                      </td>
+                      <td className="align-right">{formatStockNumber(item.latestPrice)}</td>
+                      <td className={`align-right ${signedClass(item.changeAmount)}`}>{formatSignedStockNumber(item.changeAmount)}</td>
+                      <td className={`align-right ${signedClass(item.changeRate)}`}>{formatPercent(item.changeRate)}</td>
+                      <td className="align-right">{formatPercent(item.navRatio)}</td>
+                      <td className="align-right">{formatHoldingShares(item.holdingSharesWan)}</td>
+                      <td className="align-right">{formatHoldingMarketValue(item.holdingMarketValueWan)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="panel">

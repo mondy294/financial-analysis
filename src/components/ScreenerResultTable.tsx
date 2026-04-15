@@ -34,9 +34,10 @@ export function ScreenerResultTable({
     <section className="panel screener-result-panel">
       <div className="section-head compact-head">
         <div>
-          <h3>筛选结果</h3>
-          <p>默认只展示前 100 条。先点一行选中基金，再按“查看评分”打开 Score Card。</p>
+          <h3>基金列表</h3>
+          <p>这里固定作为主视图。先点一行选中基金，再看评分、详情、自选、对比或录入持有。</p>
         </div>
+
         <div className="badge badge-muted">命中 {total} 条</div>
       </div>
 
