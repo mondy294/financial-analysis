@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { FinancialMcpContext } from "./context.js";
 
-type ToolResultPayload = {
+export type ToolResultPayload = {
   summary: string;
   structuredContent?: Record<string, unknown>;
 };
@@ -15,6 +15,11 @@ export abstract class BaseMcpTool<TSchema extends z.ZodTypeAny> {
 
   constructor(protected readonly context: FinancialMcpContext) {}
 
+  async invoke(input: unknown): Promise<ToolResultPayload> {
+    const parsed = this.inputSchema.parse(input);
+    return this.execute(parsed);
+  }
+
   register(server: McpServer) {
     const config = {
       title: this.title,
@@ -24,7 +29,7 @@ export abstract class BaseMcpTool<TSchema extends z.ZodTypeAny> {
 
     const callback = async (input: unknown) => {
       try {
-        const result = await this.execute(input as z.infer<TSchema>);
+        const result = await this.invoke(input);
         return {
           content: [{ type: "text", text: result.summary }],
           ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
@@ -49,6 +54,17 @@ export abstract class BaseMcpTool<TSchema extends z.ZodTypeAny> {
       name: this.name,
       title: this.title,
       description: this.description,
+    };
+  }
+
+  getOpenAiToolDefinition() {
+    return {
+      type: "function" as const,
+      function: {
+        name: this.name,
+        description: `${this.title}：${this.description}`,
+        parameters: z.toJSONSchema(this.inputSchema),
+      },
     };
   }
 

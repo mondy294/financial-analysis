@@ -31,6 +31,56 @@ export class FundAnalysisTool extends BaseMcpTool<typeof FundAnalysisTool.schema
   }
 }
 
+export class FundPeerBenchmarkTool extends BaseMcpTool<typeof FundPeerBenchmarkTool.schema> {
+  static readonly schema = z.object({
+    fundCode: z.string().regex(/^\d{6}$/, "基金代码必须是 6 位数字"),
+    limit: z.number().int().min(1).max(10).optional(),
+  });
+
+  readonly name = "get_fund_peer_benchmark";
+  readonly title = "基金同类对标";
+  readonly description = "返回同类基金中的相对分位、最相似可比基金列表和关键收益/回撤/波动位置。";
+  readonly inputSchema = FundPeerBenchmarkTool.schema;
+
+  constructor(context: FinancialMcpContext) {
+    super(context);
+  }
+
+  protected async execute({ fundCode, limit }: z.infer<typeof FundPeerBenchmarkTool.schema>) {
+    const payload = await this.context.fundResearchService.getPeerBenchmark(fundCode, limit ?? 5);
+    return {
+      summary: payload.subject
+        ? `已返回基金 ${fundCode} 的同类对标结果，基于 ${payload.peerBaseCount} 只同类基金计算。`
+        : `基金 ${fundCode} 暂未进入本地基金池缓存，未能生成同类对标。`,
+      structuredContent: payload,
+    };
+  }
+}
+
+export class FundHoldingBreadthTool extends BaseMcpTool<typeof FundHoldingBreadthTool.schema> {
+  static readonly schema = z.object({
+    fundCode: z.string().regex(/^\d{6}$/, "基金代码必须是 6 位数字"),
+    topline: z.number().int().min(1).max(20).optional(),
+  });
+
+  readonly name = "get_fund_holding_breadth";
+  readonly title = "基金重仓股强弱广度";
+  readonly description = "汇总基金重仓股的上涨/下跌数量、平均涨跌幅、集中度以及最强最弱个股。";
+  readonly inputSchema = FundHoldingBreadthTool.schema;
+
+  constructor(context: FinancialMcpContext) {
+    super(context);
+  }
+
+  protected async execute({ fundCode, topline }: z.infer<typeof FundHoldingBreadthTool.schema>) {
+    const payload = await this.context.fundResearchService.getHoldingBreadth(fundCode, topline ?? 10);
+    return {
+      summary: `已返回基金 ${fundCode} 最近披露持仓的广度结果，共覆盖 ${payload.totalHoldings} 只股票。`,
+      structuredContent: payload,
+    };
+  }
+}
+
 export class MyFundHoldingTool extends BaseMcpTool<typeof MyFundHoldingTool.schema> {
   static readonly schema = z.object({
     fundCode: z.string().regex(/^\d{6}$/, "基金代码必须是 6 位数字"),

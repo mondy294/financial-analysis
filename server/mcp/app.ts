@@ -3,27 +3,12 @@ import Router from "@koa/router";
 import bodyParser from "koa-bodyparser";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { McpServer } from "@modelcontextprotocol/server";
-import { createFinancialMcpContext } from "./core/context.js";
-import { McpToolRegistry } from "./core/registry.js";
-import { FundAnalysisTool, FundScreenerOptionsTool, FundSectorsTool, ListMyFundHoldingsTool, MyFundHoldingTool, QueryFundUniverseTool, RefreshFundUniverseCacheTool, SectorFundsTool } from "./tools/fund-tools.js";
-import { FundHoldingStocksTool, RealtimeStockQuotesTool } from "./tools/stock-tools.js";
+import { createFinancialMcpRegistry } from "./registry.js";
 
 export class FinancialMcpApplication {
   private readonly app = new Koa();
   private readonly router = new Router();
-  private readonly context = createFinancialMcpContext();
-  private readonly registry = new McpToolRegistry([
-    new RealtimeStockQuotesTool(this.context),
-    new FundHoldingStocksTool(this.context),
-    new FundAnalysisTool(this.context),
-    new MyFundHoldingTool(this.context),
-    new ListMyFundHoldingsTool(this.context),
-    new FundScreenerOptionsTool(this.context),
-    new QueryFundUniverseTool(this.context),
-    new FundSectorsTool(this.context),
-    new SectorFundsTool(this.context),
-    new RefreshFundUniverseCacheTool(this.context),
-  ]);
+  private readonly registry = createFinancialMcpRegistry();
   private readonly server = new McpServer({
     name: "financial-analysis-mcp",
     version: "2.0.0",

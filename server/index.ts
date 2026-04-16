@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getCompareList, getHoldings, getWatchlist, saveCompareList, saveHoldings, saveWatchlist } from "./data-store.js";
+import { FundAgentService } from "./agent/fund-agent-service.js";
 import { getFundPerformance } from "./fund-service.js";
 import { startFinancialMcpServer } from "./mcp/index.js";
 import {
@@ -33,6 +34,7 @@ const distIndexFile = path.join(distDir, "index.html");
 const port = Number(process.env.PORT || 4176);
 
 const app = express();
+const fundAgentService = new FundAgentService();
 
 app.use(express.json());
 
@@ -127,6 +129,24 @@ app.get("/api/funds/:code", async (request, response) => {
     response.json(payload);
   } catch (error) {
     response.status(500).json({ error: toErrorMessage(error) });
+  }
+});
+
+app.post("/api/agent/fund-analysis", async (request, response) => {
+  try {
+    const fundCode = validateCode(String(request.body?.fundCode ?? ""));
+    const horizon = typeof request.body?.horizon === "string" ? request.body.horizon : null;
+    const userQuestion = typeof request.body?.userQuestion === "string" ? request.body.userQuestion : null;
+    const payload = await fundAgentService.analyzeFund({
+      fundCode,
+      horizon,
+      userQuestion,
+    });
+    response.json(payload);
+  } catch (error) {
+    const message = toErrorMessage(error);
+    const statusCode = /基金编号必须是 6 位数字/.test(message) ? 400 : 500;
+    response.status(statusCode).json({ error: message });
   }
 });
 

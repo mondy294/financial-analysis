@@ -1400,6 +1400,82 @@ th {
   padding-left: 18px;
 }
 
+.agent-analysis-card,
+.agent-analysis-hero,
+.agent-analysis-columns,
+.agent-tool-trace-list,
+.agent-analysis-section,
+.agent-tool-trace-item,
+.agent-analysis-block {
+  display: grid;
+  gap: 16px;
+}
+
+.agent-analysis-card {
+  margin-top: 18px;
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  border: 1px solid rgba(79, 140, 255, 0.22);
+  background: linear-gradient(180deg, rgba(79, 140, 255, 0.08), rgba(7, 18, 35, 0.52));
+}
+
+.agent-analysis-hero,
+.agent-analysis-grid,
+.agent-analysis-columns {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.agent-analysis-highlight,
+.agent-analysis-section,
+.agent-tool-trace-item {
+  border-radius: 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.agent-analysis-highlight span,
+.agent-analysis-section h4,
+.agent-tool-trace-item h4 {
+  color: var(--muted);
+}
+
+.agent-analysis-highlight strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 24px;
+  line-height: 1.3;
+}
+
+.agent-analysis-highlight p,
+.agent-analysis-section p,
+.agent-tool-trace-item p {
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.agent-analysis-section h4,
+.agent-tool-trace-item h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.agent-analysis-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.agent-tool-trace {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-tool-trace > strong {
+  display: block;
+}
+
 @media (max-width: 1320px) {
   .console-shell {
     grid-template-columns: 1fr;

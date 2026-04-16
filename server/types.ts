@@ -348,3 +348,79 @@ export type FundAnalysisResponse = {
   screener: FundUniverseItem | null;
   myHolding: FundHoldingSnapshot | null;
 };
+
+export type FundPeerBenchmarkPeer = {
+  code: string;
+  name: string;
+  category: ScreenerFundCategory;
+  rawFundType: string | null;
+  sectorTags: string[];
+  themeTags: string[];
+  scoreTotal: number;
+  similarityScore: number;
+  metrics: FundUniverseMetrics;
+};
+
+export type FundPeerBenchmarkResponse = {
+  fundCode: string;
+  updatedAt: string | null;
+  peerBaseCount: number;
+  subject: FundUniverseItem | null;
+  percentile: {
+    return1m: number | null;
+    return3m: number | null;
+    return1y: number | null;
+    maxDrawdown1y: number | null;
+    volatility1y: number | null;
+    feeRate: number | null;
+    scoreTotal: number | null;
+  } | null;
+  peers: FundPeerBenchmarkPeer[];
+};
+
+export type FundHoldingBreadthResponse = {
+  fundCode: string;
+  reportDate: string | null;
+  totalHoldings: number;
+  positiveCount: number;
+  negativeCount: number;
+  flatCount: number;
+  averageChangeRate: number | null;
+  concentrationTop3: number | null;
+  concentrationTop5: number | null;
+  strongestStocks: FundHoldingStock[];
+  weakestStocks: FundHoldingStock[];
+};
+
+export type AgentToolTrace = {
+  toolName: string;
+  summary: string;
+};
+
+export type FundAgentTrendOutlook = "偏多" | "中性" | "偏谨慎" | "无法判断";
+export type FundAgentActionTag = "观望为主" | "分批布局" | "持有待跟踪" | "谨慎减仓";
+
+export type FundAgentReport = {
+  horizon: string;
+  outlook: FundAgentTrendOutlook;
+  confidence: number;
+  summary: string;
+  actionTag: FundAgentActionTag;
+  actionAdvice: string;
+  suitableFor: string;
+  unsuitableFor: string;
+  reasoning: string[];
+  risks: string[];
+  watchItems: string[];
+  disclaimer: string;
+};
+
+export type FundAgentAnalysisResponse = {
+  runId: string;
+  fundCode: string;
+  fundName: string | null;
+  generatedAt: string;
+  model: string;
+  toolTrace: AgentToolTrace[];
+  report: FundAgentReport;
+};

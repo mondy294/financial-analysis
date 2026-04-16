@@ -1003,7 +1003,7 @@ export async function queryFundUniverse(query: ScreenerQueryPayload): Promise<Sc
 
 export async function getSectorStats(): Promise<ScreenerSectorStat[]> {
   const cache = await getOrRefreshScreenerSectorCache();
-  return cache.items.filter((item) => item.count > 0 || (item.totalFundCount ?? 0) > 0);
+  return cache.items.filter((item) => item.count > 0);
 }
 
 export async function getSectorFunds(sector: string, ranking?: ScreenerRankingKey | null) {

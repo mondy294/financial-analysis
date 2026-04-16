@@ -1,5 +1,6 @@
 import type {
   CompareItem,
+  FundAgentAnalysisResponse,
   FundDetailResponse,
   HoldingDraft,
   HoldingItem,
@@ -31,6 +32,17 @@ async function request<T>(input: RequestInfo | URL, init?: RequestInit): Promise
 
 export function getFundDetail(code: string) {
   return request<FundDetailResponse>(`/api/funds/${code}`);
+}
+
+export function analyzeFundWithAgent(fundCode: string, options?: { horizon?: string; userQuestion?: string }) {
+  return request<FundAgentAnalysisResponse>("/api/agent/fund-analysis", {
+    method: "POST",
+    body: JSON.stringify({
+      fundCode,
+      horizon: options?.horizon,
+      userQuestion: options?.userQuestion,
+    }),
+  });
 }
 
 export async function getWatchlist() {

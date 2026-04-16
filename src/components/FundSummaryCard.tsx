@@ -1,4 +1,6 @@
-import type { FundDetailResponse, FundHoldingStock, HoldingItem } from "../types";
+import { useEffect, useState } from "react";
+import { analyzeFundWithAgent } from "../api/client";
+import type { FundAgentAnalysisResponse, FundDetailResponse, FundHoldingStock, HoldingItem } from "../types";
 import { formatAmount, formatDateTime, formatNav, formatPercent, signedClass } from "../utils/fund";
 import { ChartPanel } from "./ChartPanel";
 
@@ -51,6 +53,16 @@ function formatHoldingMarketValue(value: FundHoldingStock["holdingMarketValueWan
   return value === null || value === undefined ? "--" : `${stockNumberFormatter.format(value)} 万元`;
 }
 
+function renderList(items: string[]) {
+  return (
+    <ul className="agent-analysis-list">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
 export function FundSummaryCard({
   detail,
   inWatchlist,
@@ -60,6 +72,32 @@ export function FundSummaryCard({
   onUseForHolding,
 }: FundSummaryCardProps) {
   const { fund, performance, navHistory, stockHoldings, stockHoldingsReportDate } = detail;
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [agentResult, setAgentResult] = useState<FundAgentAnalysisResponse | null>(null);
+
+  useEffect(() => {
+    setAgentLoading(false);
+    setAgentError(null);
+    setAgentResult(null);
+  }, [fund.code]);
+
+  async function handleRunAgentAnalysis() {
+    setAgentLoading(true);
+    setAgentError(null);
+
+    try {
+      const payload = await analyzeFundWithAgent(fund.code, {
+        horizon: "未来 1-3 个月",
+        userQuestion: "请分析未来 1-3 个月走势，并给出当下操作建议。",
+      });
+      setAgentResult(payload);
+    } catch (error) {
+      setAgentError(error instanceof Error ? error.message : "基金 AI 分析失败，请稍后再试。");
+    } finally {
+      setAgentLoading(false);
+    }
+  }
 
   return (
     <div className="content-grid">
@@ -118,6 +156,9 @@ export function FundSummaryCard({
               添加到我的自选
             </button>
           )}
+          <button type="button" className="secondary-button" onClick={() => void handleRunAgentAnalysis()} disabled={agentLoading}>
+            {agentLoading ? "AI 分析中..." : "AI 分析未来走势"}
+          </button>
         </div>
 
         {holding ? (
@@ -143,6 +184,88 @@ export function FundSummaryCard({
               <strong>{formatDateTime(holding.updatedAt)}</strong>
             </div>
           </div>
+        ) : null}
+
+        {agentError ? (
+          <div className="warning-box agent-analysis-block">
+            <strong>AI 分析失败</strong>
+            <p>{agentError}</p>
+          </div>
+        ) : null}
+
+        {agentResult ? (
+          <section className="agent-analysis-card">
+            <div className="section-head compact-head">
+              <div>
+                <span className="eyebrow">Agent Analysis</span>
+                <h3>未来走势与操作建议</h3>
+                <p>这部分由项目内 Agent 结合 MCP 数据实时生成，属于研究辅助，不是自动交易信号。</p>
+              </div>
+              <div className="badge-wrap">
+                <span className="badge badge-emerald">{agentResult.report.outlook}</span>
+                <span className="badge badge-muted">置信度 {agentResult.report.confidence}</span>
+                <span className="badge badge-muted">{formatDateTime(agentResult.generatedAt)}</span>
+              </div>
+            </div>
+
+            <div className="agent-analysis-hero">
+              <article className="agent-analysis-highlight">
+                <span>结论摘要</span>
+                <strong>{agentResult.report.summary}</strong>
+                <p>{agentResult.report.actionAdvice}</p>
+              </article>
+              <article className="agent-analysis-highlight">
+                <span>建议标签</span>
+                <strong>{agentResult.report.actionTag}</strong>
+                <p>分析周期：{agentResult.report.horizon}</p>
+              </article>
+            </div>
+
+            <div className="agent-analysis-grid">
+              <article className="detail-card">
+                <span>更适合谁</span>
+                <strong>{agentResult.report.suitableFor}</strong>
+              </article>
+              <article className="detail-card">
+                <span>不太适合谁</span>
+                <strong>{agentResult.report.unsuitableFor}</strong>
+              </article>
+            </div>
+
+            <div className="agent-analysis-columns">
+              <article className="agent-analysis-section">
+                <h4>核心依据</h4>
+                {renderList(agentResult.report.reasoning)}
+              </article>
+              <article className="agent-analysis-section">
+                <h4>主要风险</h4>
+                {renderList(agentResult.report.risks)}
+              </article>
+              <article className="agent-analysis-section">
+                <h4>接下来盯这些</h4>
+                {renderList(agentResult.report.watchItems)}
+              </article>
+            </div>
+
+            {agentResult.toolTrace.length > 0 ? (
+              <div className="agent-tool-trace">
+                <strong>本次用到的工具</strong>
+                <div className="agent-tool-trace-list">
+                  {agentResult.toolTrace.map((item) => (
+                    <article key={`${item.toolName}-${item.summary}`} className="agent-tool-trace-item">
+                      <h4>{item.toolName}</h4>
+                      <p>{item.summary}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="disclaimer-banner">
+              <strong>风险提示</strong>
+              <span>{agentResult.report.disclaimer}</span>
+            </div>
+          </section>
         ) : null}
       </section>
 
