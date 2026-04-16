@@ -7,7 +7,8 @@ import { getRequiredEnvValue, getEnvValue } from "../env.js";
 import { createFinancialMcpRegistry } from "../mcp/registry.js";
 import type { AgentToolTrace, FundAgentAnalysisResponse, FundAgentReport } from "../types.js";
 
-const DEFAULT_MODEL = getEnvValue(["DEEPSEEK_MODEL"], "deepseek-chat") || "deepseek-chat";
+const DEFAULT_MODEL = getEnvValue(["DEEPSEEK_MODEL"], "deepseek-reasoner") || "deepseek-reasoner";
+
 const DEFAULT_HORIZON = "未来 1-3 个月";
 const MAX_TOOL_ROUNDS = 6;
 
@@ -45,6 +46,7 @@ function normalizeReportPayload(value: unknown) {
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   return {
     ...source,
+    recentWeekDrivers: normalizeStringList(source.recentWeekDrivers),
     reasoning: normalizeStringList(source.reasoning),
     risks: normalizeStringList(source.risks),
     watchItems: normalizeStringList(source.watchItems),
@@ -113,8 +115,10 @@ function buildUserPrompt(input: { fundCode: string; horizon: string; userQuestio
   return [
     `请分析基金 ${input.fundCode}。`,
     `目标周期：${input.horizon}。`,
-    `用户补充问题：${input.userQuestion || "请分析未来走势并给出当下操作建议。"}`,
+    `用户补充问题：${input.userQuestion || "请先解释最近一周变化、再分析未来走势，并给出当下操作建议。"}`,
     "至少先获取基金基础分析和同类对标；若有股票持仓，尽量补充持仓股广度。",
+    "请先说明最近一周发生了什么，再解释变化的可能原因，最后给出未来 1-3 个月判断。",
+    "如果存在本地持仓，请给出更具体的仓位动作与百分比范围；如果没有持仓，也请给出试探建仓或继续观察的仓位建议。",
     "输出时不要出现任何多余字段。",
   ].join("\n");
 }

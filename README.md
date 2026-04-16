@@ -55,9 +55,9 @@ npm run dev
 ```
 
 - 前端管理台：`http://localhost:4177`
-- API 服务：`http://localhost:4176`
-- Financial MCP 服务：`http://127.0.0.1:4178/mcp`
-- MCP 健康检查：`http://127.0.0.1:4178/health`
+- API 服务：`http://127.0.0.1:4176`
+- Financial MCP 服务：`http://127.0.0.1:4188/mcp`
+- MCP 健康检查：`http://127.0.0.1:4188/health`
 
 ### MCP 已暴露工具
 

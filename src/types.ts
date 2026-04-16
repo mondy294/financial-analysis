@@ -258,9 +258,13 @@ export type FundAgentReport = {
   horizon: string;
   outlook: FundAgentTrendOutlook;
   confidence: number;
+  recentWeekSummary: string;
+  recentWeekDrivers: string[];
   summary: string;
   actionTag: FundAgentActionTag;
   actionAdvice: string;
+  positionInstruction: string;
+  positionSizing: string;
   suitableFor: string;
   unsuitableFor: string;
   reasoning: string[];

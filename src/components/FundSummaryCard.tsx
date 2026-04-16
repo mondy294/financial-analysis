@@ -53,15 +53,34 @@ function formatHoldingMarketValue(value: FundHoldingStock["holdingMarketValueWan
   return value === null || value === undefined ? "--" : `${stockNumberFormatter.format(value)} 万元`;
 }
 
-function renderList(items: string[]) {
+function ensureStringList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as string[];
+  }
+
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function ensureText(value: string | null | undefined, fallback = "--") {
+  return typeof value === "string" && value.trim().length > 0 ? value : fallback;
+}
+
+function renderList(items: unknown, emptyText = "暂无可展示内容") {
+  const safeItems = ensureStringList(items);
+
+  if (safeItems.length === 0) {
+    return <p className="empty-state compact-empty">{emptyText}</p>;
+  }
+
   return (
     <ul className="agent-analysis-list">
-      {items.map((item) => (
+      {safeItems.map((item) => (
         <li key={item}>{item}</li>
       ))}
     </ul>
   );
 }
+
 
 export function FundSummaryCard({
   detail,
@@ -89,7 +108,7 @@ export function FundSummaryCard({
     try {
       const payload = await analyzeFundWithAgent(fund.code, {
         horizon: "未来 1-3 个月",
-        userQuestion: "请分析未来 1-3 个月走势，并给出当下操作建议。",
+        userQuestion: "请先解释最近一周净值变化，再说明可能原因，并分析未来 1-3 个月走势；如果我有持仓，请给出明确的仓位动作和加减仓幅度。",
       });
       setAgentResult(payload);
     } catch (error) {
@@ -99,7 +118,11 @@ export function FundSummaryCard({
     }
   }
 
+  const agentReport = agentResult?.report ?? null;
+  const agentToolTrace = Array.isArray(agentResult?.toolTrace) ? agentResult.toolTrace : [];
+
   return (
+
     <div className="content-grid">
       <section className="panel spotlight-panel">
         <div className="section-head">
@@ -193,7 +216,7 @@ export function FundSummaryCard({
           </div>
         ) : null}
 
-        {agentResult ? (
+        {agentResult && agentReport ? (
           <section className="agent-analysis-card">
             <div className="section-head compact-head">
               <div>
@@ -202,8 +225,8 @@ export function FundSummaryCard({
                 <p>这部分由项目内 Agent 结合 MCP 数据实时生成，属于研究辅助，不是自动交易信号。</p>
               </div>
               <div className="badge-wrap">
-                <span className="badge badge-emerald">{agentResult.report.outlook}</span>
-                <span className="badge badge-muted">置信度 {agentResult.report.confidence}</span>
+                <span className="badge badge-emerald">{ensureText(agentReport.outlook, "无法判断")}</span>
+                <span className="badge badge-muted">置信度 {agentReport.confidence ?? "--"}</span>
                 <span className="badge badge-muted">{formatDateTime(agentResult.generatedAt)}</span>
               </div>
             </div>
@@ -211,47 +234,71 @@ export function FundSummaryCard({
             <div className="agent-analysis-hero">
               <article className="agent-analysis-highlight">
                 <span>结论摘要</span>
-                <strong>{agentResult.report.summary}</strong>
-                <p>{agentResult.report.actionAdvice}</p>
+                <strong>{ensureText(agentReport.summary, "暂无分析摘要")}</strong>
+                <p>{ensureText(agentReport.actionAdvice, "暂无具体操作建议")}</p>
               </article>
               <article className="agent-analysis-highlight">
                 <span>建议标签</span>
-                <strong>{agentResult.report.actionTag}</strong>
-                <p>分析周期：{agentResult.report.horizon}</p>
+                <strong>{ensureText(agentReport.actionTag, "待补充")}</strong>
+                <p>{ensureText(agentReport.positionInstruction, "暂无明确仓位动作")}</p>
               </article>
             </div>
 
             <div className="agent-analysis-grid">
               <article className="detail-card">
+                <span>分析周期</span>
+                <strong>{ensureText(agentReport.horizon, "--")}</strong>
+              </article>
+              <article className="detail-card">
+                <span>仓位幅度</span>
+                <strong>{ensureText(agentReport.positionSizing, "暂无建议")}</strong>
+              </article>
+              <article className="detail-card">
                 <span>更适合谁</span>
-                <strong>{agentResult.report.suitableFor}</strong>
+                <strong>{ensureText(agentReport.suitableFor, "暂无结论")}</strong>
               </article>
               <article className="detail-card">
                 <span>不太适合谁</span>
-                <strong>{agentResult.report.unsuitableFor}</strong>
+                <strong>{ensureText(agentReport.unsuitableFor, "暂无结论")}</strong>
+              </article>
+            </div>
+
+            <div className="agent-analysis-columns">
+              <article className="agent-analysis-section">
+                <h4>最近一周发生了什么</h4>
+                <p>{ensureText(agentReport.recentWeekSummary, "暂无最近一周变化说明")}</p>
+              </article>
+              <article className="agent-analysis-section">
+                <h4>变化的可能原因</h4>
+                {renderList(agentReport.recentWeekDrivers, "暂无变化原因说明")}
+              </article>
+              <article className="agent-analysis-section">
+                <h4>具体仓位动作</h4>
+                <p>{ensureText(agentReport.positionInstruction, "暂无明确仓位动作")}</p>
+                <p>建议幅度：{ensureText(agentReport.positionSizing, "暂无建议")}</p>
               </article>
             </div>
 
             <div className="agent-analysis-columns">
               <article className="agent-analysis-section">
                 <h4>核心依据</h4>
-                {renderList(agentResult.report.reasoning)}
+                {renderList(agentReport.reasoning, "暂无核心依据")}
               </article>
               <article className="agent-analysis-section">
                 <h4>主要风险</h4>
-                {renderList(agentResult.report.risks)}
+                {renderList(agentReport.risks, "暂无主要风险提示")}
               </article>
               <article className="agent-analysis-section">
                 <h4>接下来盯这些</h4>
-                {renderList(agentResult.report.watchItems)}
+                {renderList(agentReport.watchItems, "暂无后续观察点")}
               </article>
             </div>
 
-            {agentResult.toolTrace.length > 0 ? (
+            {agentToolTrace.length > 0 ? (
               <div className="agent-tool-trace">
                 <strong>本次用到的工具</strong>
                 <div className="agent-tool-trace-list">
-                  {agentResult.toolTrace.map((item) => (
+                  {agentToolTrace.map((item) => (
                     <article key={`${item.toolName}-${item.summary}`} className="agent-tool-trace-item">
                       <h4>{item.toolName}</h4>
                       <p>{item.summary}</p>
@@ -263,10 +310,11 @@ export function FundSummaryCard({
 
             <div className="disclaimer-banner">
               <strong>风险提示</strong>
-              <span>{agentResult.report.disclaimer}</span>
+              <span>{ensureText(agentReport.disclaimer, "以上内容仅供研究参考，不构成投资建议。")}</span>
             </div>
           </section>
         ) : null}
+
       </section>
 
       <ChartPanel points={detail.trend} costNav={holding?.costNav ?? null} />

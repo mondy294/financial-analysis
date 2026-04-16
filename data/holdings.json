@@ -1,6 +1,15 @@
 {
   "items": [
     {
+      "code": "023408",
+      "status": "持有中",
+      "holdingReturnRate": -0.86,
+      "positionAmount": 893.08,
+      "costNav": 2.0794,
+      "note": "",
+      "updatedAt": "2026-04-16T01:15:07.247Z"
+    },
+    {
       "code": "270042",
       "status": "持有中",
       "holdingReturnRate": 4.21,

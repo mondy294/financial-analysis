@@ -80,7 +80,8 @@ Agent 仍会继续使用已有工具：
 
 可选字段：
 - `DEEPSEEK_BASE_URL`，默认 `https://api.deepseek.com`
-- `DEEPSEEK_MODEL`，默认 `deepseek-chat`
+- `DEEPSEEK_MODEL`，默认 `deepseek-reasoner`
+
 
 ## 本地验证
 ### 类型检查
@@ -105,5 +106,6 @@ npm run agent:smoke -- 161725
 ## 当前实现边界
 1. 这是同步分析接口，当前未做异步任务队列。
 2. 同类对标依赖本地基金池缓存；若目标基金未进入缓存，会在结果里明确提示。
-3. 当前默认模型是 `deepseek-chat`，如果后续要加强推理，可以改成 `deepseek-reasoner` 继续试。
+3. 当前默认模型是 `deepseek-reasoner`；如果需要更快响应或遇到兼容性问题，可以通过 `DEEPSEEK_MODEL=deepseek-chat` 回退。
+
 4. 输出属于研究辅助，不构成投资建议。
