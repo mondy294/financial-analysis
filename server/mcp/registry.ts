@@ -13,6 +13,7 @@ import {
   RefreshFundUniverseCacheTool,
   SectorFundsTool,
 } from "./tools/fund-tools.js";
+import { FundMarketNewsTool } from "./tools/news-tools.js";
 import { FundHoldingStocksTool, RealtimeStockQuotesTool } from "./tools/stock-tools.js";
 
 export function createFinancialMcpRegistry() {
@@ -31,6 +32,7 @@ export function createFinancialMcpRegistry() {
     new QueryFundUniverseTool(context),
     new FundSectorsTool(context),
     new SectorFundsTool(context),
+    new FundMarketNewsTool(context),
     new RefreshFundUniverseCacheTool(context),
   ]);
 }

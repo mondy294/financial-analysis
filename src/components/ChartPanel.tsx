@@ -6,7 +6,7 @@ import * as echarts from "echarts/core";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import ReactECharts from "echarts-for-react/lib/core";
-import type { ChartRange, FundTrendPoint } from "../types";
+import type { ChartRange, FundAgentForecast, FundTrendPoint } from "../types";
 import {
   buildTrendIndicators,
   calculateRangeReturn,
@@ -21,6 +21,7 @@ import {
 type ChartPanelProps = {
   points: FundTrendPoint[];
   costNav?: number | null;
+  forecast?: FundAgentForecast | null;
 };
 
 type OverlayKey = "nav" | "cost" | "ma5" | "ma10" | "ma20" | "ma60" | "bollUpper" | "bollLower";
@@ -48,6 +49,19 @@ const legendNameMap: Record<string, OverlayKey> = {
   MA60: "ma60",
   "BOLL 上轨": "bollUpper",
   "BOLL 下轨": "bollLower",
+};
+
+const forecastPalette = ["#34d399", "#f59e0b", "#fb7185", "#a78bfa"] as const;
+
+type ForecastSeriesDatum = {
+  value: number;
+  rawNav: number;
+  returnRate: number;
+  probability: number;
+  scenarioLabel: string;
+  scenarioId: string;
+  isForecast: true;
+  isBaseAnchor?: boolean;
 };
 
 function getDefaultOverlayState(hasCostLine: boolean): Record<OverlayKey, boolean> {
@@ -87,7 +101,15 @@ function formatAxisLabel(value: number, mode: AxisMode) {
   return mode === "percent" ? `${Number(value).toFixed(2)}%` : Number(value).toFixed(4);
 }
 
-export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
+function formatProbability(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "--";
+  }
+
+  return `${Math.round(Number(value))}%`;
+}
+
+export function ChartPanel({ points, costNav = null, forecast = null }: ChartPanelProps) {
   const [activeRange, setActiveRange] = useState<ChartRange>("3M");
   const [axisMode, setAxisMode] = useState<AxisMode>("percent");
   const hasCostLine = costNav !== null && Number.isFinite(costNav);
@@ -115,6 +137,37 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
   const rangeReturn = useMemo(() => calculateRangeReturn(chartPoints), [chartPoints]);
   const insights = useMemo(() => calculateTrendInsights(filteredPoints, costNav), [filteredPoints, costNav]);
   const firstNav = chartPoints[0]?.nav ?? null;
+  const lastHistoricalPoint = chartPoints.at(-1) ?? null;
+
+  const forecastSeriesDescriptors = useMemo(() => {
+    if (!forecast || !lastHistoricalPoint) {
+      return [];
+    }
+
+    return (forecast.scenarios ?? [])
+      .filter((scenario) => Array.isArray(scenario.points) && scenario.points.length > 0)
+      .map((scenario, index) => ({
+        ...scenario,
+        color: forecastPalette[index % forecastPalette.length],
+        pointsMap: new Map(scenario.points.map((point) => [point.date, point])),
+      }));
+  }, [forecast, lastHistoricalPoint]);
+
+  const combinedDates = useMemo(() => {
+    const historicalDates = chartPoints.map((item) => item.date);
+    const knownDates = new Set(historicalDates);
+    const futureDates = Array.from(
+      new Set(
+        forecastSeriesDescriptors.flatMap((scenario) => scenario.points.map((point) => point.date)),
+      ),
+    )
+      .filter((date) => !knownDates.has(date))
+      .sort((left, right) => new Date(`${left}T00:00:00`).getTime() - new Date(`${right}T00:00:00`).getTime());
+
+    return [...historicalDates, ...futureDates];
+  }, [chartPoints, forecastSeriesDescriptors]);
+
+  const historicalPointMap = useMemo(() => new Map(chartPoints.map((item) => [item.date, item])), [chartPoints]);
 
   const indicatorCards = useMemo(
     () => [
@@ -134,48 +187,114 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
   );
 
   const option = useMemo<EChartsOption | null>(() => {
-    if (chartPoints.length < 2) {
+    if (chartPoints.length < 2 || !lastHistoricalPoint) {
       return null;
     }
 
-    const seriesValueBuckets: number[] = [];
     const project = (value: number | null | undefined) => projectValueByMode(value, axisMode, firstNav);
+    const buildHistoricalSeries = (selector: (item: typeof chartPoints[number]) => number | null | undefined) => combinedDates.map((date) => {
+      const item = historicalPointMap.get(date);
+      return item ? project(selector(item)) : null;
+    });
 
+    const mainNavData = buildHistoricalSeries((item) => item.nav);
+    const ma5Data = buildHistoricalSeries((item) => item.ma5);
+    const ma10Data = buildHistoricalSeries((item) => item.ma10);
+    const ma20Data = buildHistoricalSeries((item) => item.ma20);
+    const ma60Data = buildHistoricalSeries((item) => item.ma60);
+    const bollUpperData = buildHistoricalSeries((item) => item.bollUpper);
+    const bollLowerData = buildHistoricalSeries((item) => item.bollLower);
+    const costLineData = hasCostLine && costNav !== null
+      ? combinedDates.map((date) => (historicalPointMap.has(date) ? project(costNav) : null))
+      : [];
+
+    const forecastSeries = forecastSeriesDescriptors.map((scenario) => ({
+      name: `预测-${scenario.label}`,
+      type: "line" as const,
+      smooth: false,
+      showSymbol: false,
+      connectNulls: false,
+      emphasis: {
+        focus: "series" as const,
+        scale: true,
+      },
+      lineStyle: {
+        width: 2.2,
+        type: "dashed" as const,
+        color: scenario.color,
+        opacity: 0.96,
+      },
+      itemStyle: {
+        color: scenario.color,
+      },
+      data: combinedDates.map((date) => {
+        if (date === lastHistoricalPoint.date) {
+          const anchorValue = project(lastHistoricalPoint.nav);
+          return anchorValue === null ? null : {
+            value: anchorValue,
+            rawNav: lastHistoricalPoint.nav,
+            returnRate: 0,
+            probability: scenario.probability,
+            scenarioLabel: scenario.label,
+            scenarioId: scenario.id,
+            isForecast: true,
+            isBaseAnchor: true,
+          } satisfies ForecastSeriesDatum;
+        }
+
+        const point = scenario.pointsMap.get(date);
+        if (!point) {
+          return null;
+        }
+
+        const value = project(point.nav);
+        return value === null ? null : {
+          value,
+          rawNav: point.nav,
+          returnRate: point.returnRate,
+          probability: scenario.probability,
+          scenarioLabel: scenario.label,
+          scenarioId: scenario.id,
+          isForecast: true,
+        } satisfies ForecastSeriesDatum;
+      }),
+    }));
+
+    const seriesValueBuckets: number[] = [];
     if (overlayVisibility.nav) {
-      seriesValueBuckets.push(...chartPoints.map((item) => project(item.nav)).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...mainNavData.filter((value): value is number => value !== null));
     }
     if (overlayVisibility.ma5) {
-      seriesValueBuckets.push(...chartPoints.map((item) => project(item.ma5)).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...ma5Data.filter((value): value is number => value !== null));
     }
     if (overlayVisibility.ma10) {
-      seriesValueBuckets.push(...chartPoints.map((item) => project(item.ma10)).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...ma10Data.filter((value): value is number => value !== null));
     }
     if (overlayVisibility.ma20) {
-      seriesValueBuckets.push(...chartPoints.map((item) => project(item.ma20)).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...ma20Data.filter((value): value is number => value !== null));
     }
     if (overlayVisibility.ma60) {
-      seriesValueBuckets.push(...chartPoints.map((item) => project(item.ma60)).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...ma60Data.filter((value): value is number => value !== null));
     }
     if (overlayVisibility.bollUpper) {
-      seriesValueBuckets.push(...chartPoints.map((item) => project(item.bollUpper)).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...bollUpperData.filter((value): value is number => value !== null));
     }
     if (overlayVisibility.bollLower) {
-      seriesValueBuckets.push(...chartPoints.map((item) => project(item.bollLower)).filter((value): value is number => value !== null));
+      seriesValueBuckets.push(...bollLowerData.filter((value): value is number => value !== null));
     }
-    if (hasCostLine && overlayVisibility.cost && costNav !== null) {
-      const projectedCost = project(costNav);
-      if (projectedCost !== null) {
-        seriesValueBuckets.push(projectedCost);
-      }
+    if (hasCostLine && overlayVisibility.cost) {
+      seriesValueBuckets.push(...costLineData.filter((value): value is number => value !== null));
     }
+    forecastSeriesDescriptors.forEach((scenario) => {
+      seriesValueBuckets.push(...scenario.points.map((point) => project(point.nav)).filter((value): value is number => value !== null));
+    });
 
-    const fallbackValues = chartPoints.map((item) => project(item.nav)).filter((value): value is number => value !== null);
+    const fallbackValues = mainNavData.filter((value): value is number => value !== null);
     const allValues = seriesValueBuckets.length > 0 ? seriesValueBuckets : fallbackValues;
     const min = Math.min(...allValues);
     const max = Math.max(...allValues);
     const spread = Math.max(max - min, axisMode === "percent" ? 0.2 : 0.004);
-    const axisPadding = spread * (axisMode === "percent" ? 0.04 : 0.035);
-
+    const axisPadding = spread * (axisMode === "percent" ? 0.05 : 0.04);
 
     return {
       backgroundColor: "transparent",
@@ -186,6 +305,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
         icon: "roundRect",
         itemWidth: 10,
         itemHeight: 10,
+        data: overlayMeta.filter((item) => item.key !== "cost" || hasCostLine).map((item) => item.label),
         selected: {
           单位净值: overlayVisibility.nav,
           成本线: hasCostLine ? overlayVisibility.cost : false,
@@ -220,34 +340,75 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
           },
         },
         formatter: (params: unknown) => {
-          const point = Array.isArray(params) ? params[0] : params;
-          const dataIndex = typeof (point as { dataIndex?: number } | undefined)?.dataIndex === "number"
-            ? (point as { dataIndex?: number }).dataIndex ?? 0
-            : 0;
-          const current = chartPoints[dataIndex];
-          const drift = toPercentChange(current?.nav ?? null, firstNav);
-          const axisValue = project(current?.nav ?? null);
-          const deviationFromMa20 = current?.nav && current.ma20 ? Number((((current.nav - current.ma20) / current.ma20) * 100).toFixed(2)) : null;
-          const deviationFromCost = current?.nav && hasCostLine && costNav ? Number((((current.nav - costNav) / costNav) * 100).toFixed(2)) : null;
+          const items = (Array.isArray(params) ? params : [params]) as Array<{
+            dataIndex?: number;
+            data?: unknown;
+            marker?: string;
+          }>;
+          const dataIndex = typeof items[0]?.dataIndex === "number" ? items[0].dataIndex : 0;
+          const axisDate = combinedDates[dataIndex] ?? "--";
+          const current = historicalPointMap.get(axisDate) ?? null;
+          const forecastEntries = items
+            .map((item) => {
+              const data = item.data as Partial<ForecastSeriesDatum> | null;
+              if (!data || typeof data !== "object" || data.isForecast !== true || data.isBaseAnchor) {
+                return null;
+              }
+              if (typeof data.rawNav !== "number") {
+                return null;
+              }
+              return {
+                marker: item.marker ?? "",
+                label: data.scenarioLabel ?? "预测分支",
+                probability: data.probability ?? null,
+                rawNav: data.rawNav,
+                returnRate: data.returnRate ?? null,
+              };
+            })
+            .filter((item): item is { marker: string; label: string; probability: number | null; rawNav: number; returnRate: number | null } => item !== null);
 
-          return [
-            `<div style="font-weight:600;margin-bottom:6px;">悬浮点坐标</div>`,
-            `<div>横轴（日期）：${current?.date ?? "--"}</div>`,
-            `<div>纵轴（${axisMode === "percent" ? "涨跌幅" : "单位净值"}）：${axisValue === null ? "--" : formatAxisLabel(axisValue, axisMode)}</div>`,
-            `<div>单位净值：${formatNav(current?.nav ?? null)}</div>`,
-            `<div>区间涨跌：${formatPercent(drift)}</div>`,
-            `<div style="margin-top:6px;opacity:0.82;">均线 / 带宽</div>`,
-            `<div>MA5：${formatNav(current?.ma5 ?? null)}</div>`,
-            `<div>MA10：${formatNav(current?.ma10 ?? null)}</div>`,
-            `<div>MA20：${formatNav(current?.ma20 ?? null)}</div>`,
-            `<div>MA60：${formatNav(current?.ma60 ?? null)}</div>`,
-            `<div>BOLL 上轨：${formatNav(current?.bollUpper ?? null)}</div>`,
-            `<div>BOLL 下轨：${formatNav(current?.bollLower ?? null)}</div>`,
-            ...(hasCostLine ? [`<div>成本线：${formatNav(costNav)}</div>`] : []),
-            `<div style="margin-top:6px;opacity:0.82;">位置判断</div>`,
-            `<div>相对 MA20：${formatPercent(deviationFromMa20)}</div>`,
-            ...(hasCostLine ? [`<div>相对成本：${formatPercent(deviationFromCost)}</div>`] : []),
-          ].join("");
+          if (current) {
+            const drift = toPercentChange(current.nav ?? null, firstNav);
+            const axisValue = project(current.nav ?? null);
+            const deviationFromMa20 = current.nav && current.ma20 ? Number((((current.nav - current.ma20) / current.ma20) * 100).toFixed(2)) : null;
+            const deviationFromCost = current.nav && hasCostLine && costNav ? Number((((current.nav - costNav) / costNav) * 100).toFixed(2)) : null;
+
+            return [
+              `<div style="font-weight:600;margin-bottom:6px;">悬浮点坐标</div>`,
+              `<div>横轴（日期）：${axisDate}</div>`,
+              `<div>纵轴（${axisMode === "percent" ? "涨跌幅" : "单位净值"}）：${axisValue === null ? "--" : formatAxisLabel(axisValue, axisMode)}</div>`,
+              `<div>单位净值：${formatNav(current.nav ?? null)}</div>`,
+              `<div>区间涨跌：${formatPercent(drift)}</div>`,
+              `<div style="margin-top:6px;opacity:0.82;">均线 / 带宽</div>`,
+              `<div>MA5：${formatNav(current.ma5 ?? null)}</div>`,
+              `<div>MA10：${formatNav(current.ma10 ?? null)}</div>`,
+              `<div>MA20：${formatNav(current.ma20 ?? null)}</div>`,
+              `<div>MA60：${formatNav(current.ma60 ?? null)}</div>`,
+              `<div>BOLL 上轨：${formatNav(current.bollUpper ?? null)}</div>`,
+              `<div>BOLL 下轨：${formatNav(current.bollLower ?? null)}</div>`,
+              ...(hasCostLine ? [`<div>成本线：${formatNav(costNav)}</div>`] : []),
+              `<div style="margin-top:6px;opacity:0.82;">位置判断</div>`,
+              `<div>相对 MA20：${formatPercent(deviationFromMa20)}</div>`,
+              ...(hasCostLine ? [`<div>相对成本：${formatPercent(deviationFromCost)}</div>`] : []),
+              ...(forecastEntries.length > 0
+                ? [
+                    `<div style="margin-top:6px;opacity:0.82;">未来分支概率</div>`,
+                    ...forecastEntries.map((entry) => `${entry.marker}<span>${entry.label}：${formatProbability(entry.probability)} · ${formatNav(entry.rawNav)}（${formatPercent(entry.returnRate)}）</span>`),
+                  ]
+                : []),
+            ].join("");
+          }
+
+          if (forecastEntries.length > 0) {
+            return [
+              `<div style="font-weight:600;margin-bottom:6px;">未来路径预测</div>`,
+              `<div>横轴（日期）：${axisDate}</div>`,
+              `<div style="margin-top:6px;opacity:0.82;">不同分支</div>`,
+              ...forecastEntries.map((entry) => `${entry.marker}<span>${entry.label}：单位净值 ${formatNav(entry.rawNav)} · 相对当前 ${formatPercent(entry.returnRate)} · 概率 ${formatProbability(entry.probability)}</span>`),
+            ].join("");
+          }
+
+          return `<div style="font-weight:600;">${axisDate}</div>`;
         },
       },
       grid: {
@@ -260,7 +421,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
       xAxis: {
         type: "category",
         boundaryGap: false,
-        data: chartPoints.map((item) => item.date),
+        data: combinedDates,
         axisLine: {
           lineStyle: {
             color: "rgba(148, 163, 184, 0.22)",
@@ -341,7 +502,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
               { type: "min", name: "区间低点", valueDim: "y", label: { formatter: "低" } },
             ],
           },
-          data: chartPoints.map((item) => project(item.nav)),
+          data: mainNavData,
         },
         ...(hasCostLine && costNav !== null
           ? [{
@@ -353,7 +514,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
                 type: "dotted" as const,
                 color: "#fb7185",
               },
-              data: chartPoints.map(() => project(costNav)),
+              data: costLineData,
             }]
           : []),
         {
@@ -366,7 +527,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             width: 2,
             color: "#22d3ee",
           },
-          data: chartPoints.map((item) => project(item.ma5)),
+          data: ma5Data,
         },
         {
           name: "MA10",
@@ -378,7 +539,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             width: 2,
             color: "#f59e0b",
           },
-          data: chartPoints.map((item) => project(item.ma10)),
+          data: ma10Data,
         },
         {
           name: "MA20",
@@ -390,7 +551,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             width: 2,
             color: "#34d399",
           },
-          data: chartPoints.map((item) => project(item.ma20)),
+          data: ma20Data,
         },
         {
           name: "MA60",
@@ -403,7 +564,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             type: "dashed",
             color: "#a78bfa",
           },
-          data: chartPoints.map((item) => project(item.ma60)),
+          data: ma60Data,
         },
         {
           name: "BOLL 上轨",
@@ -417,7 +578,7 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             color: "#f472b6",
             opacity: 0.92,
           },
-          data: chartPoints.map((item) => project(item.bollUpper)),
+          data: bollUpperData,
         },
         {
           name: "BOLL 下轨",
@@ -431,11 +592,23 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
             color: "#c084fc",
             opacity: 0.92,
           },
-          data: chartPoints.map((item) => project(item.bollLower)),
+          data: bollLowerData,
         },
+        ...forecastSeries,
       ],
     };
-  }, [axisMode, chartPoints, costNav, firstNav, hasCostLine, overlayVisibility]);
+  }, [
+    axisMode,
+    chartPoints,
+    combinedDates,
+    costNav,
+    firstNav,
+    forecastSeriesDescriptors,
+    hasCostLine,
+    historicalPointMap,
+    lastHistoricalPoint,
+    overlayVisibility,
+  ]);
 
   function toggleOverlay(key: OverlayKey) {
     if (key === "cost" && !hasCostLine) {
@@ -479,13 +652,14 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
   const values = chartPoints.map((item) => item.nav);
   const min = Math.min(...values);
   const max = Math.max(...values);
+  const forecastEndDate = forecastSeriesDescriptors.flatMap((scenario) => scenario.points.map((point) => point.date)).at(-1) ?? null;
 
   return (
     <section className="panel chart-panel">
       <div className="section-head chart-header">
         <div>
-          <h3>区间业绩图 + 技术指标</h3>
-          <p>默认先看更清晰的主折线，图表高度和绘图区都进一步加大了；想看涨跌起伏时会更直观，技术指标也可以按需再打开。</p>
+          <h3>区间业绩图 + 技术指标 + 未来路径预测</h3>
+          <p>主折线仍然是历史净值；如果已经跑过 AI 分析，最右侧会继续接出多条虚线预测分支，鼠标移上去会额外显示对应概率。</p>
         </div>
         <div className={`range-return ${signedClass(rangeReturn)}`}>{formatPercent(rangeReturn)}</div>
       </div>
@@ -531,6 +705,21 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
         })}
       </div>
 
+      {forecastSeriesDescriptors.length > 0 ? (
+        <div className="forecast-branch-row spaced-top">
+          {forecastSeriesDescriptors.map((scenario) => (
+            <article key={scenario.id} className="forecast-branch-chip">
+              <div className="forecast-branch-chip-head">
+                <span className="overlay-dot" style={{ backgroundColor: scenario.color }} />
+                <strong>{scenario.label}</strong>
+                <em>概率 {formatProbability(scenario.probability)}</em>
+              </div>
+              <p>目标 {formatPercent(scenario.targetReturn)} · {scenario.summary}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+
       <ReactECharts
         echarts={echarts}
         option={option}
@@ -552,9 +741,9 @@ export function ChartPanel({ points, costNav = null }: ChartPanelProps) {
       <div className="chart-footer">
         <span>{chartPoints[0]?.date}</span>
         <span>
-          区间最低 {formatNav(min)} / 最高 {formatNav(max)} · 区间涨跌 {formatPercent(rangeReturn)}
+          区间最低 {formatNav(min)} / 最高 {formatNav(max)} · 区间涨跌 {formatPercent(rangeReturn)}{forecastEndDate ? ` · AI 预测延伸至 ${forecastEndDate}` : ""}
         </span>
-        <span>{chartPoints.at(-1)?.date}</span>
+        <span>{forecastEndDate ?? chartPoints.at(-1)?.date}</span>
       </div>
     </section>
   );

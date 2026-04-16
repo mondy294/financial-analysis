@@ -445,6 +445,8 @@ export type AgentToolTrace = {
 
 export type FundAgentTrendOutlook = "偏多" | "中性" | "偏谨慎" | "无法判断";
 export type FundAgentActionTag = "观望为主" | "分批布局" | "持有待跟踪" | "谨慎减仓";
+export type FundAgentForecastVolatility = "低" | "中" | "高";
+export type FundAgentForecastPathStyle = "震荡上行" | "高位震荡" | "区间震荡" | "先抑后扬" | "先扬后抑" | "震荡下行";
 
 export type FundAgentReport = {
   horizon: string;
@@ -470,6 +472,33 @@ export type FundAgentReport = {
   disclaimer: string;
 };
 
+export type FundAgentForecastPoint = {
+  date: string;
+  nav: number;
+  returnRate: number;
+};
+
+export type FundAgentForecastScenario = {
+  id: string;
+  label: string;
+  probability: number;
+  summary: string;
+  trigger: string;
+  targetReturn: number;
+  targetNav: number;
+  volatility: FundAgentForecastVolatility;
+  pathStyle: FundAgentForecastPathStyle;
+  points: FundAgentForecastPoint[];
+};
+
+export type FundAgentForecast = {
+  horizon: string;
+  baseDate: string;
+  baseNav: number;
+  stepDays: number;
+  scenarios: FundAgentForecastScenario[];
+};
+
 export type FundAgentAnalysisResponse = {
   runId: string;
   fundCode: string;
@@ -478,4 +507,91 @@ export type FundAgentAnalysisResponse = {
   model: string;
   toolTrace: AgentToolTrace[];
   report: FundAgentReport;
+  forecast: FundAgentForecast | null;
+};
+
+export type PersistedFundAgentAnalysis = FundAgentAnalysisResponse & {
+  updatedAt: string;
+};
+
+export type FundAgentBatchAnalysisItemStatus = "success" | "failed";
+
+export type FundAgentBatchAnalysisItem = {
+  fundCode: string;
+  fundName: string | null;
+  status: FundAgentBatchAnalysisItemStatus;
+  generatedAt: string | null;
+  updatedAt: string | null;
+  error: string | null;
+};
+
+export type FundAgentBatchAnalysisResult = {
+  scope: "watchlist";
+  horizon: string;
+  userQuestion: string | null;
+  total: number;
+  succeeded: number;
+  failed: number;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  items: FundAgentBatchAnalysisItem[];
+};
+
+export type FundMarketNewsRegion = "国内" | "海外" | "综合";
+export type FundMarketNewsTopic = "焦点" | "基金" | "全球股市" | "商品" | "外汇" | "债券" | "地区" | "央行" | "经济数据";
+
+export type FundMarketNewsItem = {
+  id: string;
+  title: string;
+  summary: string;
+  publishedAt: string;
+  source: string;
+  detailUrl: string | null;
+  topic: FundMarketNewsTopic;
+  region: FundMarketNewsRegion;
+  feedKey: string;
+  feedLabel: string;
+  importanceScore: number;
+  impactTags: string[];
+  relatedStocks: Array<{
+    code: string;
+    name: string;
+  }>;
+};
+
+export type FundMarketNewsFeedStat = {
+  feedKey: string;
+  feedLabel: string;
+  topic: FundMarketNewsTopic;
+  region: FundMarketNewsRegion;
+  pagesFetched: number;
+  matchedCount: number;
+  earliestMatchedAt: string | null;
+  latestMatchedAt: string | null;
+  truncated: boolean;
+};
+
+export type FundMarketNewsQueryResponse = {
+  startTime: string;
+  endTime: string;
+  limit: number;
+  keywords: string[];
+  regions: FundMarketNewsRegion[];
+  topics: FundMarketNewsTopic[];
+  total: number;
+  truncated: boolean;
+  coverageNote: string;
+  feedStats: FundMarketNewsFeedStat[];
+  stats: {
+    byTopic: Array<{
+      topic: string;
+      count: number;
+    }>;
+    byRegion: Array<{
+      region: string;
+      count: number;
+    }>;
+  };
+  items: FundMarketNewsItem[];
 };

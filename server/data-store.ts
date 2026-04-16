@@ -5,6 +5,7 @@ import type {
   CollectionFile,
   FundUniverseCacheFile,
   PersistedCompareItem,
+  PersistedFundAgentAnalysis,
   PersistedHoldingItem,
   PersistedScreenerPreset,
   PersistedWatchlistItem,
@@ -14,15 +15,17 @@ import type {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataDir = path.resolve(__dirname, "../data");
+const analysisCacheDir = path.join(dataDir, "analysis-cache");
 const watchlistFile = path.join(dataDir, "watchlist.json");
 const holdingsFile = path.join(dataDir, "holdings.json");
 const compareFile = path.join(dataDir, "compare-list.json");
 const fundUniverseFile = path.join(dataDir, "fund-universe-cache.json");
 const screenerSectorCacheFile = path.join(dataDir, "screener-sector-cache.json");
 const screenerPresetsFile = path.join(dataDir, "screener-presets.json");
+const fundAgentReportsFile = path.join(analysisCacheDir, "fund-agent-reports.json");
 
 async function ensureDataFile<T>(filePath: string, fallback: T) {
-  await fs.mkdir(dataDir, { recursive: true });
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
 
   try {
     await fs.access(filePath);
@@ -126,4 +129,12 @@ export async function getScreenerPresets() {
 
 export async function saveScreenerPresets(items: PersistedScreenerPreset[]) {
   await writeCollection<PersistedScreenerPreset>(screenerPresetsFile, items);
+}
+
+export async function getFundAgentReports() {
+  return readCollection<PersistedFundAgentAnalysis>(fundAgentReportsFile);
+}
+
+export async function saveFundAgentReports(items: PersistedFundAgentAnalysis[]) {
+  await writeCollection<PersistedFundAgentAnalysis>(fundAgentReportsFile, items);
 }

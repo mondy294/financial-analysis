@@ -2,8 +2,9 @@ import express from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getCompareList, getHoldings, getWatchlist, saveCompareList, saveHoldings, saveWatchlist } from "./data-store.js";
+import { getCompareList, getFundAgentReports, getHoldings, getWatchlist, saveCompareList, saveHoldings, saveWatchlist } from "./data-store.js";
 import { FundAgentService } from "./agent/fund-agent-service.js";
+import { analyzeFundAndPersist, analyzeWatchlistFundsAndPersist } from "./agent/fund-agent-batch-service.js";
 import { getFundPerformance } from "./fund-service.js";
 import { startFinancialMcpServer } from "./mcp/index.js";
 import {
@@ -137,12 +138,46 @@ app.post("/api/agent/fund-analysis", async (request, response) => {
     const fundCode = validateCode(String(request.body?.fundCode ?? ""));
     const horizon = typeof request.body?.horizon === "string" ? request.body.horizon : null;
     const userQuestion = typeof request.body?.userQuestion === "string" ? request.body.userQuestion : null;
-    const payload = await fundAgentService.analyzeFund({
+    const record = await analyzeFundAndPersist(fundAgentService, {
       fundCode,
       horizon,
       userQuestion,
     });
+    response.json(record);
+  } catch (error) {
+    const message = toErrorMessage(error);
+    const statusCode = /基金编号必须是 6 位数字/.test(message) ? 400 : 500;
+    response.status(statusCode).json({ error: message });
+  }
+});
+
+app.post("/api/agent/watchlist-analysis", async (request, response) => {
+  try {
+    const codes = Array.isArray(request.body?.codes)
+      ? request.body.codes.map((code: unknown) => validateCode(String(code ?? "")))
+      : null;
+    const horizon = typeof request.body?.horizon === "string" ? request.body.horizon : null;
+    const userQuestion = typeof request.body?.userQuestion === "string" ? request.body.userQuestion : null;
+    const payload = await analyzeWatchlistFundsAndPersist({
+      service: fundAgentService,
+      codes,
+      horizon,
+      userQuestion,
+    });
     response.json(payload);
+  } catch (error) {
+    const message = toErrorMessage(error);
+    const statusCode = /基金编号必须是 6 位数字/.test(message) ? 400 : 500;
+    response.status(statusCode).json({ error: message });
+  }
+});
+
+app.get("/api/agent/fund-analysis/:code", async (request, response) => {
+  try {
+    const fundCode = validateCode(request.params.code);
+    const payload = await getFundAgentReports();
+    const item = payload.items.find((record) => record.fundCode === fundCode) ?? null;
+    response.json({ item });
   } catch (error) {
     const message = toErrorMessage(error);
     const statusCode = /基金编号必须是 6 位数字/.test(message) ? 400 : 500;

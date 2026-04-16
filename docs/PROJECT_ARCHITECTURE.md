@@ -1,6 +1,6 @@
 # financial 项目架构与交互说明
 
-> 更新时间：2026-04-15  
+> 更新时间：2026-04-16  
 > 适用范围：`/Users/lijiaao/Desktop/financial`
 
 ## 1. 项目定位
@@ -35,6 +35,7 @@
 - 基金详情与净值：`pingzhongdata`、`fundgz`、`f10/lsjz`
 - 条件选基候选池：`fundcode_search.js`、`rankhandler.aspx`
 - 主题板块扩容：天天基金主题基金 `ZTJJ/GetBKListByBKTypeNew`、`ZTJJ/GetBKRelTopicFundNew`
+- 市场新闻快讯：东方财富 `np-weblist.eastmoney.com/comm/web/getFastNewsList`，按焦点、基金、全球股市、商品、外汇、债券、地区、央行、经济数据栏目聚合
 - 服务端负责抓取、聚合、清洗并转成前端可直接消费的结构
 
 ### 本地持久化
@@ -64,7 +65,7 @@ financial/
 ├── data/                      # 自选 / 持有的 JSON 持久化文件
 ├── docs/
 │   └── PROJECT_ARCHITECTURE.md
-├── server/                    # Express API、基金聚合逻辑、JSON 仓储
+├── server/                    # Express API、基金聚合逻辑、新闻聚合逻辑、JSON 仓储
 ├── src/
 │   ├── api/                   # 前端请求层
 │   ├── components/            # 查询组件、详情卡、图表组件
@@ -144,8 +145,16 @@ financial/
 - 提供动作：
   - 添加 / 移除自选
   - 录入 / 更新持有
+  - 触发基金 Agent 分析未来走势
+- 直接展示 Agent 生成的趋势判断、仓位计划、风险提示与“近期影响因素”新闻摘要
 - 下挂图表组件 `ChartPanel`
 - 下挂近期业绩卡片、最近 30 条净值表格
+
+#### `src/components/FundAgentNewsDigest.tsx`
+职责：
+- 从 Agent `toolTrace` 中提取 `get_fund_market_news` 的摘要
+- 结合 `report.recentWeekDrivers` 与 `report.watchItems`，在前端汇总“近期影响因素”
+- 复用于总览页分析卡与持仓 AI 抽屉，避免重复写展示逻辑
 
 #### `src/components/ChartPanel.tsx`
 职责：
@@ -232,6 +241,7 @@ financial/
 - `GET /api/screener/presets`
 - `POST /api/screener/presets`
 - `DELETE /api/screener/presets/:id`
+- `POST /mcp`（通过 MCP 暴露基金分析、筛选、持仓与市场新闻工具）
 
 #### `server/fund-service.ts`
 职责：
@@ -252,6 +262,14 @@ financial/
 2. `fundgz/{code}.js`：实时估值 JSONP
 3. `f10/lsjz`：最近净值历史记录
 
+#### `server/news-service.ts`
+职责：
+- 通过东方财富 `np-weblist.eastmoney.com/comm/web/getFastNewsList` 聚合市场快讯
+- 按时间范围拉取焦点、基金、股市、商品、外汇、债券、地区、央行和经济数据栏目
+- 做关键词过滤、栏目映射、影响标签推断、去重和排序
+- 为 MCP / Agent 提供“近期哪些国内外新闻可能影响基金”的统一结构化结果
+- 为 Agent 工具轨迹提供可直接展示在前端的新闻摘要素材
+
 #### `server/data-store.ts`
 职责：
 - 负责 `data/` 目录及 JSON 文件存在性检查
@@ -267,6 +285,8 @@ financial/
   - 原始持久化结构
   - 富化后的返回结构
   - 条件选基候选池与主题板块缓存结构
+  - 市场新闻 MCP 的结构化结果
+  - 基金 Agent 结构化分析结果（保持既有 JSON 结构不变）
 
 ---
 

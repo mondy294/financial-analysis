@@ -1,6 +1,7 @@
 import type {
   CompareItem,
-  FundAgentAnalysisResponse,
+  FundAgentAnalysisRecord,
+  FundAgentBatchAnalysisResult,
   FundDetailResponse,
   HoldingDraft,
   HoldingItem,
@@ -35,12 +36,28 @@ export function getFundDetail(code: string) {
 }
 
 export function analyzeFundWithAgent(fundCode: string, options?: { horizon?: string; userQuestion?: string }) {
-  return request<FundAgentAnalysisResponse>("/api/agent/fund-analysis", {
+  return request<FundAgentAnalysisRecord>("/api/agent/fund-analysis", {
     method: "POST",
     body: JSON.stringify({
       fundCode,
       horizon: options?.horizon,
       userQuestion: options?.userQuestion,
+    }),
+  });
+}
+
+export async function getSavedFundAgentAnalysis(fundCode: string) {
+  const payload = await request<{ item: FundAgentAnalysisRecord | null }>(`/api/agent/fund-analysis/${fundCode}`);
+  return payload.item;
+}
+
+export function analyzeWatchlistWithAgent(options?: { horizon?: string; userQuestion?: string; codes?: string[] }) {
+  return request<FundAgentBatchAnalysisResult>("/api/agent/watchlist-analysis", {
+    method: "POST",
+    body: JSON.stringify({
+      horizon: options?.horizon,
+      userQuestion: options?.userQuestion,
+      codes: options?.codes,
     }),
   });
 }

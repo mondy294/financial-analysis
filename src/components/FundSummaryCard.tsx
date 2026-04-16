@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
-import { analyzeFundWithAgent } from "../api/client";
-import type { FundAgentAnalysisResponse, FundDetailResponse, FundHoldingStock, HoldingItem } from "../types";
+import { analyzeFundWithAgent, getSavedFundAgentAnalysis } from "../api/client";
+import type {
+  FundAgentAnalysisRecord,
+  FundAgentAnalysisResponse,
+  FundAgentForecastScenario,
+  FundDetailResponse,
+  FundHoldingStock,
+  HoldingItem,
+} from "../types";
 import { formatAmount, formatDateTime, formatNav, formatPercent, signedClass } from "../utils/fund";
+import { FundAgentRecordDrawer } from "./FundAgentRecordDrawer";
+import { FundAgentNewsDigest } from "./FundAgentNewsDigest";
 import { ChartPanel } from "./ChartPanel";
 
 type FundSummaryCardProps = {
@@ -53,6 +62,14 @@ function formatHoldingMarketValue(value: FundHoldingStock["holdingMarketValueWan
   return value === null || value === undefined ? "--" : `${stockNumberFormatter.format(value)} 万元`;
 }
 
+function formatProbability(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "--";
+  }
+
+  return `${Math.round(Number(value))}%`;
+}
+
 function ensureStringList(value: unknown) {
   if (!Array.isArray(value)) {
     return [] as string[];
@@ -102,6 +119,26 @@ function renderPlanLevels(levels: FundAgentAnalysisResponse["report"]["planLevel
   );
 }
 
+function renderForecastScenarios(scenarios: FundAgentForecastScenario[] | null | undefined) {
+  if (!Array.isArray(scenarios) || scenarios.length === 0) {
+    return <p className="empty-state compact-empty">暂无可展示的未来路径预测</p>;
+  }
+
+  return (
+    <div className="agent-tool-trace-list forecast-scenario-list">
+      {scenarios.map((scenario) => (
+        <article key={scenario.id} className="agent-tool-trace-item forecast-scenario-item">
+          <h4>{scenario.label}</h4>
+          <p>概率：{formatProbability(scenario.probability)} · 目标涨跌：{formatPercent(scenario.targetReturn)} · 目标净值：{formatNav(scenario.targetNav)}</p>
+          <p>路径风格：{ensureText(scenario.pathStyle, "--")} · 波动级别：{ensureText(scenario.volatility, "--")}</p>
+          <p>分支说明：{ensureText(scenario.summary, "--")}</p>
+          <p>更可能触发于：{ensureText(scenario.trigger, "--")}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function FundSummaryCard({
   detail,
   inWatchlist,
@@ -113,24 +150,73 @@ export function FundSummaryCard({
   const { fund, performance, navHistory, stockHoldings, stockHoldingsReportDate } = detail;
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
-  const [agentResult, setAgentResult] = useState<FundAgentAnalysisResponse | null>(null);
+  const [agentResult, setAgentResult] = useState<FundAgentAnalysisRecord | null>(null);
+  const [savedAgentRecord, setSavedAgentRecord] = useState<FundAgentAnalysisRecord | null>(null);
+  const [savedAgentLoading, setSavedAgentLoading] = useState(false);
+  const [savedAgentError, setSavedAgentError] = useState<string | null>(null);
+  const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
+  const [analysisPromptOpen, setAnalysisPromptOpen] = useState(false);
+  const [analysisUserQuestion, setAnalysisUserQuestion] = useState("");
 
   useEffect(() => {
     setAgentLoading(false);
     setAgentError(null);
     setAgentResult(null);
+    setSavedAgentRecord(null);
+    setSavedAgentLoading(false);
+    setSavedAgentError(null);
+    setAgentDrawerOpen(false);
+    setAnalysisPromptOpen(false);
+    setAnalysisUserQuestion("");
   }, [fund.code]);
 
-  async function handleRunAgentAnalysis() {
+  useEffect(() => {
+    let cancelled = false;
+
+    setSavedAgentLoading(true);
+    setSavedAgentError(null);
+
+    void getSavedFundAgentAnalysis(fund.code)
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        setSavedAgentRecord(payload);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setSavedAgentRecord(null);
+        setSavedAgentError(error instanceof Error ? error.message : "加载基金 AI 分析记录失败。");
+      })
+      .finally(() => {
+        if (cancelled) {
+          return;
+        }
+        setSavedAgentLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fund.code]);
+
+  async function handleRunAgentAnalysis(extraUserQuestion?: string) {
+    const nextUserQuestion = (extraUserQuestion ?? analysisUserQuestion).trim();
     setAgentLoading(true);
     setAgentError(null);
 
     try {
       const payload = await analyzeFundWithAgent(fund.code, {
         horizon: "未来 1-3 个月",
-        userQuestion: "请先解释最近一周净值变化，再说明可能原因，并分析未来 1-3 个月走势；如果我有持仓，请结合当前持仓金额、成本净值和组合占比，给出明确的仓位动作、加减仓幅度，以及跌到哪些净值附近可以考虑加仓、反弹到哪些净值附近更适合减仓或重新评估。",
+        userQuestion: nextUserQuestion || undefined,
       });
       setAgentResult(payload);
+      setSavedAgentRecord(payload);
+      setSavedAgentError(null);
+      setAnalysisPromptOpen(false);
+      setAnalysisUserQuestion("");
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "基金 AI 分析失败，请稍后再试。");
     } finally {
@@ -138,8 +224,11 @@ export function FundSummaryCard({
     }
   }
 
-  const agentReport = agentResult?.report ?? null;
-  const agentToolTrace = Array.isArray(agentResult?.toolTrace) ? agentResult.toolTrace : [];
+  const displayedAgentRecord = agentResult ?? savedAgentRecord;
+  const agentReport = displayedAgentRecord?.report ?? null;
+  const agentForecast = displayedAgentRecord?.forecast ?? null;
+  const agentToolTrace = Array.isArray(displayedAgentRecord?.toolTrace) ? displayedAgentRecord.toolTrace : [];
+  const showingSavedAgentRecord = Boolean(savedAgentRecord && !agentResult && displayedAgentRecord);
 
   return (
 
@@ -199,34 +288,96 @@ export function FundSummaryCard({
               添加到我的自选
             </button>
           )}
-          <button type="button" className="secondary-button" onClick={() => void handleRunAgentAnalysis()} disabled={agentLoading}>
+          <button type="button" className="secondary-button" onClick={() => setAnalysisPromptOpen(true)} disabled={agentLoading}>
             {agentLoading ? "AI 分析中..." : "AI 分析未来走势"}
           </button>
+          {holding ? (
+            <button type="button" className="secondary-button" onClick={() => setAgentDrawerOpen(true)}>
+              {savedAgentLoading ? "持仓 AI 读取中..." : savedAgentRecord ? "查看持仓 AI 记录" : "打开持仓 AI"}
+            </button>
+          ) : null}
         </div>
 
-        {holding ? (
-          <div className="holding-note-card">
-            <div>
-              <span className="subtle-label">我的持有</span>
-              <strong>{holding.status}</strong>
-            </div>
-            <div>
-              <span className="subtle-label">手动收益率</span>
-              <strong className={signedClass(holding.holdingReturnRate)}>{formatPercent(holding.holdingReturnRate)}</strong>
-            </div>
-            <div>
-              <span className="subtle-label">持仓金额</span>
-              <strong>{formatAmount(holding.positionAmount)}</strong>
-            </div>
-            <div>
-              <span className="subtle-label">成本净值</span>
-              <strong>{formatNav(holding.costNav)}</strong>
-            </div>
-            <div>
-              <span className="subtle-label">最近更新</span>
-              <strong>{formatDateTime(holding.updatedAt)}</strong>
-            </div>
+        {analysisPromptOpen ? (
+          <div className="utility-drawer-overlay" onClick={() => !agentLoading && setAnalysisPromptOpen(false)}>
+            <section className="utility-drawer utility-drawer--narrow" onClick={(event) => event.stopPropagation()}>
+              <div className="utility-drawer-head">
+                <div>
+                  <span className="eyebrow">AI Analysis Input</span>
+                  <h3>补充你的分析关注点</h3>
+                  <p>这一步可选。你可以告诉 AI 你的持仓想法、风险偏好、加仓顾虑，留空也会按默认流程分析。</p>
+                </div>
+                <button type="button" className="secondary-button" onClick={() => setAnalysisPromptOpen(false)} disabled={agentLoading}>
+                  关闭
+                </button>
+              </div>
+
+              <div className="utility-drawer-content">
+                <label>
+                  <span>补充说明</span>
+                  <textarea
+                    value={analysisUserQuestion}
+                    onChange={(event) => setAnalysisUserQuestion(event.target.value)}
+                    placeholder="例如：我已经盈利 8%，更关心现在是否要止盈；或者我准备再投入 3000 元，想知道更适合等回调还是突破后再加。"
+                  />
+                </label>
+
+                <div className="utility-note-panel">
+                  <div className="section-note">
+                    默认仍会分析最近一周变化、未来 1-3 个月走势、当前操作建议、加减仓阈值和重新评估条件。
+                  </div>
+                </div>
+
+                <div className="form-actions">
+                  <button type="button" className="primary-button" onClick={() => void handleRunAgentAnalysis()} disabled={agentLoading}>
+                    {agentLoading ? "AI 分析中..." : "开始分析"}
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => void handleRunAgentAnalysis("")} disabled={agentLoading}>
+                    跳过补充直接分析
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
+        ) : null}
+
+        {holding ? (
+          <>
+            <div className="holding-note-card">
+              <div>
+                <span className="subtle-label">我的持有</span>
+                <strong>{holding.status}</strong>
+              </div>
+              <div>
+                <span className="subtle-label">手动收益率</span>
+                <strong className={signedClass(holding.holdingReturnRate)}>{formatPercent(holding.holdingReturnRate)}</strong>
+              </div>
+              <div>
+                <span className="subtle-label">持仓金额</span>
+                <strong>{formatAmount(holding.positionAmount)}</strong>
+              </div>
+              <div>
+                <span className="subtle-label">成本净值</span>
+                <strong>{formatNav(holding.costNav)}</strong>
+              </div>
+              <div>
+                <span className="subtle-label">最近更新</span>
+                <strong>{formatDateTime(holding.updatedAt)}</strong>
+              </div>
+            </div>
+
+            <div className="agent-record-inline-note">
+              <span className="subtle-label">持有基金 AI 记录</span>
+              <strong>
+                {savedAgentLoading
+                  ? "正在读取已保存分析..."
+                  : savedAgentRecord
+                    ? `最近保存于 ${formatDateTime(savedAgentRecord.updatedAt)}`
+                    : "这只基金还没有已保存的 AI 分析记录"}
+              </strong>
+              <p>点击右侧小标签，可以随时从抽屉里回看当前基金最近一次 AI 分析结果。</p>
+            </div>
+          </>
         ) : null}
 
         {agentError ? (
@@ -236,18 +387,19 @@ export function FundSummaryCard({
           </div>
         ) : null}
 
-        {agentResult && agentReport ? (
+        {displayedAgentRecord && agentReport ? (
           <section className="agent-analysis-card">
             <div className="section-head compact-head">
               <div>
                 <span className="eyebrow">Agent Analysis</span>
-                <h3>未来走势与操作建议</h3>
-                <p>这部分由项目内 Agent 结合 MCP 数据实时生成，属于研究辅助，不是自动交易信号。</p>
+                <h3>未来走势、操作建议与路径预测</h3>
+                <p>这部分由项目内 Agent 结合 MCP 数据实时生成；如果你看到的是已保存记录，说明它来自上一次分析后的本地文件缓存。</p>
               </div>
               <div className="badge-wrap">
                 <span className="badge badge-emerald">{ensureText(agentReport.outlook, "无法判断")}</span>
                 <span className="badge badge-muted">置信度 {agentReport.confidence ?? "--"}</span>
-                <span className="badge badge-muted">{formatDateTime(agentResult.generatedAt)}</span>
+                <span className="badge badge-muted">{showingSavedAgentRecord ? "已保存记录" : "本次新分析"}</span>
+                <span className="badge badge-muted">{formatDateTime(displayedAgentRecord.generatedAt)}</span>
               </div>
             </div>
 
@@ -263,6 +415,8 @@ export function FundSummaryCard({
                 <p>{ensureText(agentReport.planSummary, "暂无可执行计划")}</p>
               </article>
             </div>
+
+            <FundAgentNewsDigest report={agentReport} toolTrace={agentToolTrace} />
 
             <div className="agent-analysis-grid">
               <article className="detail-card">
@@ -302,6 +456,11 @@ export function FundSummaryCard({
                 <p>建议幅度：{ensureText(agentReport.positionSizing, "暂无建议")}</p>
               </article>
               <article className="agent-analysis-section">
+                <h4>未来路径预测</h4>
+                <p>图上已经把这几条分支往右延伸出来了，鼠标移上去能直接看对应日期、净值和概率。</p>
+                {renderForecastScenarios(agentForecast?.scenarios)}
+              </article>
+              <article className="agent-analysis-section">
                 <h4>执行规则</h4>
                 {renderList(agentReport.executionRules, "暂无执行规则")}
               </article>
@@ -329,7 +488,7 @@ export function FundSummaryCard({
 
             {agentToolTrace.length > 0 ? (
               <div className="agent-tool-trace">
-                <strong>本次用到的工具</strong>
+                <strong>{showingSavedAgentRecord ? "这份已保存记录当时用到的工具" : "本次用到的工具"}</strong>
                 <div className="agent-tool-trace-list">
                   {agentToolTrace.map((item) => (
                     <article key={`${item.toolName}-${item.summary}`} className="agent-tool-trace-item">
@@ -350,7 +509,7 @@ export function FundSummaryCard({
 
       </section>
 
-      <ChartPanel points={detail.trend} costNav={holding?.costNav ?? null} />
+      <ChartPanel points={detail.trend} costNav={holding?.costNav ?? null} forecast={agentForecast} />
 
       <section className="panel">
         <div className="section-head">
@@ -463,6 +622,19 @@ export function FundSummaryCard({
           </table>
         </div>
       </section>
+
+      {holding ? (
+        <FundAgentRecordDrawer
+          open={agentDrawerOpen}
+          fundCode={fund.code}
+          fundName={fund.name}
+          holding={holding}
+          analysis={savedAgentRecord}
+          loading={savedAgentLoading}
+          error={savedAgentError}
+          onClose={() => setAgentDrawerOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

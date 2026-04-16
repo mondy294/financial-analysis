@@ -3,6 +3,7 @@ import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "reac
 import {
   addCompare,
   addWatchlist,
+  analyzeWatchlistWithAgent,
   getCompareList,
   getFundDetail,
   getHoldings,
@@ -18,7 +19,14 @@ import { HoldingsPage } from "./pages/HoldingsPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { ScreenerPage } from "./pages/ScreenerPage";
 import { WatchlistPage } from "./pages/WatchlistPage";
-import type { CompareItem, FundDetailResponse, HoldingDraft, HoldingItem, WatchlistItem } from "./types";
+import type {
+  CompareItem,
+  FundAgentBatchAnalysisResult,
+  FundDetailResponse,
+  HoldingDraft,
+  HoldingItem,
+  WatchlistItem,
+} from "./types";
 
 const emptyHoldingDraft: HoldingDraft = {
   code: "",
@@ -43,7 +51,7 @@ const pageMetaMap: Record<string, PageMeta> = {
   },
   "/watchlist": {
     title: "我的自选",
-    description: "盯盘用这一页，保留重点基金，快速看最新净值、估值和阶段表现。",
+    description: "盯盘用这一页，保留重点基金，快速看最新净值、估值和阶段表现，也能一键批量跑 Agent 分析。",
   },
   "/holdings": {
     title: "我的持有",
@@ -72,6 +80,8 @@ export default function App() {
   const [compareItems, setCompareItems] = useState<CompareItem[]>([]);
   const [holdingDraft, setHoldingDraft] = useState<HoldingDraft | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
+  const [watchlistBatchLoading, setWatchlistBatchLoading] = useState(false);
+  const [watchlistBatchResult, setWatchlistBatchResult] = useState<FundAgentBatchAnalysisResult | null>(null);
 
   useEffect(() => {
     void Promise.all([reloadHoldings(), reloadWatchlist(), reloadCompare()]);
@@ -169,6 +179,41 @@ export default function App() {
       setNotice({ type: "success", message: `已把 ${code} 从自选移除` });
     } catch (error) {
       setNotice({ type: "error", message: error instanceof Error ? error.message : "移除自选失败" });
+    }
+  }
+
+  async function handleAnalyzeWatchlist() {
+    if (watchlist.length === 0) {
+      setNotice({ type: "error", message: "自选列表还是空的，先加几只基金再跑批量分析。" });
+      return;
+    }
+
+    setWatchlistBatchLoading(true);
+    try {
+      const payload = await analyzeWatchlistWithAgent({
+        horizon: "未来 1-3 个月",
+      });
+      setWatchlistBatchResult(payload);
+      await reloadWatchlist();
+
+      if (payload.failed > 0) {
+        const failedCodes = payload.items
+          .filter((item) => item.status === "failed")
+          .map((item) => item.fundCode)
+          .slice(0, 4)
+          .join("、");
+        setNotice({
+          type: "error",
+          message: `批量分析完成：成功 ${payload.succeeded} 只，失败 ${payload.failed} 只${failedCodes ? `（${failedCodes}）` : ""}`,
+        });
+        return;
+      }
+
+      setNotice({ type: "success", message: `批量分析完成，已更新 ${payload.succeeded} 只自选基金的最新 Agent 结果` });
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "批量分析失败" });
+    } finally {
+      setWatchlistBatchLoading(false);
     }
   }
 
@@ -365,6 +410,9 @@ export default function App() {
               <WatchlistPage
                 items={watchlist}
                 loading={watchlistLoading}
+                batchAnalyzing={watchlistBatchLoading}
+                batchResult={watchlistBatchResult}
+                onAnalyzeAll={handleAnalyzeWatchlist}
                 onRemove={handleRemoveWatchlist}
                 onOpenDetail={handleOpenDetail}
                 onUseForHolding={prepareHolding}

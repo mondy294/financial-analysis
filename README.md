@@ -17,7 +17,7 @@
 - 前端：React 18 + TypeScript + Vite + React Router + ECharts
 - 服务端：Node.js + Express + Koa + TypeScript
 - MCP：Koa + `@modelcontextprotocol/server` + `@modelcontextprotocol/node`
-- 数据来源：天天基金 / 东方财富公开页面接口
+- 数据来源：天天基金 / 东方财富公开页面接口（含基金详情、主题板块、全球财经快讯）
 - 持久化：项目内 JSON 文件（`data/watchlist.json`、`data/holdings.json`）
 
 ## 项目结构
@@ -70,6 +70,7 @@ npm run dev
 - `query_fund_universe`：按收益、回撤、波动、费率、主题等条件筛选基金池
 - `get_fund_sectors`：获取基金池中有数据的行业、概念和标签统计
 - `get_sector_funds`：查看某个行业/概念/标签下的基金列表
+- `get_fund_market_news`：按时间段查询可能影响基金的国内外市场新闻，覆盖焦点、基金、股市、商品、外汇、债券、地区、央行和经济数据快讯
 - `refresh_fund_universe_cache`：主动刷新基金池和行业概念缓存
 
 
