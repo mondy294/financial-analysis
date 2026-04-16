@@ -31,7 +31,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distDir = path.resolve(__dirname, "../dist");
 const distIndexFile = path.join(distDir, "index.html");
-const port = Number(process.env.PORT || 3000);
+const port = Number(process.env.PORT || 7070);
 
 const app = express();
 const fundAgentService = new FundAgentService();

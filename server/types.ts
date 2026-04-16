@@ -392,6 +392,52 @@ export type FundHoldingBreadthResponse = {
   weakestStocks: FundHoldingStock[];
 };
 
+export type FundTradePlanLevelKind = "观察确认位" | "试探加仓位" | "分批加仓位" | "减仓位" | "风控线";
+
+export type FundTradePlanLevel = {
+  kind: FundTradePlanLevelKind;
+  nav: number | null;
+  relativeToLatest: number | null;
+  reference: string;
+  condition: string;
+  action: string;
+  reason: string;
+};
+
+export type FundTradePlanSnapshot = {
+  fundCode: string;
+  fundName: string | null;
+  category: ScreenerFundCategory | null;
+  signal: FundTrendSignal;
+  latestNav: number | null;
+  estimatedNav: number | null;
+  estimatedChangeRate: number | null;
+  ma10: number | null;
+  ma20: number | null;
+  ma60: number | null;
+  biasToMa20: number | null;
+  biasToMa60: number | null;
+  holding: {
+    hasHolding: boolean;
+    status: string | null;
+    positionAmount: number | null;
+    costNav: number | null;
+    currentProfitRate: number | null;
+    estimatedProfitRate: number | null;
+    portfolioPositionRatio: number | null;
+  };
+  sizingSuggestion: {
+    currentActionBias: string;
+    addOnDip: string;
+    addOnBreakout: string;
+    reduceOnWeakness: string;
+    initialProbe: string;
+  };
+  planLevels: FundTradePlanLevel[];
+  observationSignals: string[];
+  riskFlags: string[];
+};
+
 export type AgentToolTrace = {
   toolName: string;
   summary: string;
@@ -409,8 +455,13 @@ export type FundAgentReport = {
   summary: string;
   actionTag: FundAgentActionTag;
   actionAdvice: string;
+  holdingContext: string;
   positionInstruction: string;
   positionSizing: string;
+  planSummary: string;
+  executionRules: string[];
+  planLevels: FundTradePlanLevel[];
+  reEvaluationTriggers: string[];
   suitableFor: string;
   unsuitableFor: string;
   reasoning: string[];

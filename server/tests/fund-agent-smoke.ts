@@ -4,7 +4,7 @@ import { FundAgentService } from "../agent/fund-agent-service.js";
 
 const fundCode = String(process.argv[2] || "161725").trim();
 const horizon = String(process.argv[3] || "未来 1-3 个月").trim();
-const userQuestion = String(process.argv[4] || "请分析未来走势并给出当下操作建议。").trim();
+const userQuestion = String(process.argv[4] || "请分析未来走势并给出当下操作建议，同时明确写出跌到哪些净值附近可以考虑加仓、反弹到哪些净值附近更适合减仓或重新评估。").trim();
 
 const service = new FundAgentService();
 const input = {

@@ -251,6 +251,18 @@ export type AgentToolTrace = {
   summary: string;
 };
 
+export type FundTradePlanLevelKind = "观察确认位" | "试探加仓位" | "分批加仓位" | "减仓位" | "风控线";
+
+export type FundTradePlanLevel = {
+  kind: FundTradePlanLevelKind;
+  nav: number | null;
+  relativeToLatest: number | null;
+  reference: string;
+  condition: string;
+  action: string;
+  reason: string;
+};
+
 export type FundAgentTrendOutlook = "偏多" | "中性" | "偏谨慎" | "无法判断";
 export type FundAgentActionTag = "观望为主" | "分批布局" | "持有待跟踪" | "谨慎减仓";
 
@@ -263,8 +275,13 @@ export type FundAgentReport = {
   summary: string;
   actionTag: FundAgentActionTag;
   actionAdvice: string;
+  holdingContext: string;
   positionInstruction: string;
   positionSizing: string;
+  planSummary: string;
+  executionRules: string[];
+  planLevels: FundTradePlanLevel[];
+  reEvaluationTriggers: string[];
   suitableFor: string;
   unsuitableFor: string;
   reasoning: string[];

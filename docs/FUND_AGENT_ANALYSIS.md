@@ -25,6 +25,9 @@
   - 返回同类基金分位、可比基金列表
 - `get_fund_holding_breadth`
   - 返回重仓股近期涨跌广度、集中度、最强/最弱持仓
+- `get_fund_trade_plan`
+  - 把均线位置、趋势结构、当前持仓金额、成本净值、组合占比整理成可执行计划
+  - 返回试探加仓位、分批加仓位、减仓位、风控线和建议动作幅度
 
 Agent 仍会继续使用已有工具：
 - `get_fund_analysis`
@@ -53,6 +56,13 @@ Agent 仍会继续使用已有工具：
 - `report.outlook`
 - `report.actionTag`
 - `report.actionAdvice`
+- `report.holdingContext`
+- `report.positionInstruction`
+- `report.positionSizing`
+- `report.planSummary`
+- `report.executionRules`
+- `report.planLevels`
+- `report.reEvaluationTriggers`
 - `report.reasoning`
 - `report.risks`
 - `report.watchItems`
@@ -66,6 +76,11 @@ Agent 仍会继续使用已有工具：
 - 趋势判断
 - 操作标签
 - 结论摘要
+- 当前持仓背景
+- 现在该怎么做
+- 关键净值位计划（加仓位 / 减仓位 / 风控线）
+- 执行规则
+- 重新评估条件
 - 核心依据
 - 风险点
 - 后续观察指标

@@ -81,6 +81,29 @@ export class FundHoldingBreadthTool extends BaseMcpTool<typeof FundHoldingBreadt
   }
 }
 
+export class FundTradePlanTool extends BaseMcpTool<typeof FundTradePlanTool.schema> {
+  static readonly schema = z.object({
+    fundCode: z.string().regex(/^\d{6}$/, "基金代码必须是 6 位数字"),
+  });
+
+  readonly name = "get_fund_trade_plan";
+  readonly title = "基金交易计划阈值";
+  readonly description = "结合均线、趋势位置和我的当前持仓，返回更可执行的加仓位、减仓位、风控线和仓位幅度建议。";
+  readonly inputSchema = FundTradePlanTool.schema;
+
+  constructor(context: FinancialMcpContext) {
+    super(context);
+  }
+
+  protected async execute({ fundCode }: z.infer<typeof FundTradePlanTool.schema>) {
+    const payload = await this.context.fundResearchService.getTradePlanSnapshot(fundCode);
+    return {
+      summary: `已返回基金 ${fundCode} 的交易计划阈值，共整理 ${payload.planLevels.length} 个关键价位，并结合当前持仓给出动作幅度建议。`,
+      structuredContent: payload,
+    };
+  }
+}
+
 export class MyFundHoldingTool extends BaseMcpTool<typeof MyFundHoldingTool.schema> {
   static readonly schema = z.object({
     fundCode: z.string().regex(/^\d{6}$/, "基金代码必须是 6 位数字"),

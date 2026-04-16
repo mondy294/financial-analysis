@@ -10,10 +10,11 @@ export type FinancialMcpContext = {
 
 export function createFinancialMcpContext(): FinancialMcpContext {
   const portfolioService = new PortfolioService();
+  const fundAnalysisService = new FundAnalysisService(portfolioService);
 
   return {
     portfolioService,
-    fundAnalysisService: new FundAnalysisService(portfolioService),
-    fundResearchService: new FundResearchService(),
+    fundAnalysisService,
+    fundResearchService: new FundResearchService(portfolioService, fundAnalysisService),
   };
 }

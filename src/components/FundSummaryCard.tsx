@@ -81,6 +81,26 @@ function renderList(items: unknown, emptyText = "暂无可展示内容") {
   );
 }
 
+function renderPlanLevels(levels: FundAgentAnalysisResponse["report"]["planLevels"]) {
+  if (!Array.isArray(levels) || levels.length === 0) {
+    return <p className="empty-state compact-empty">暂无关键价位计划</p>;
+  }
+
+  return (
+    <div className="agent-tool-trace-list">
+      {levels.map((level, index) => (
+        <article key={`${level.kind}-${level.reference}-${index}`} className="agent-tool-trace-item">
+          <h4>{level.kind}</h4>
+          <p>参考位：{formatNav(level.nav)}{level.relativeToLatest !== null && level.relativeToLatest !== undefined ? `（相对当前 ${formatPercent(level.relativeToLatest)}）` : ""}</p>
+          <p>依据：{ensureText(level.reference, "--")}</p>
+          <p>触发条件：{ensureText(level.condition, "--")}</p>
+          <p>执行动作：{ensureText(level.action, "--")}</p>
+          <p>原因：{ensureText(level.reason, "--")}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
 
 export function FundSummaryCard({
   detail,
@@ -108,7 +128,7 @@ export function FundSummaryCard({
     try {
       const payload = await analyzeFundWithAgent(fund.code, {
         horizon: "未来 1-3 个月",
-        userQuestion: "请先解释最近一周净值变化，再说明可能原因，并分析未来 1-3 个月走势；如果我有持仓，请给出明确的仓位动作和加减仓幅度。",
+        userQuestion: "请先解释最近一周净值变化，再说明可能原因，并分析未来 1-3 个月走势；如果我有持仓，请结合当前持仓金额、成本净值和组合占比，给出明确的仓位动作、加减仓幅度，以及跌到哪些净值附近可以考虑加仓、反弹到哪些净值附近更适合减仓或重新评估。",
       });
       setAgentResult(payload);
     } catch (error) {
@@ -238,9 +258,9 @@ export function FundSummaryCard({
                 <p>{ensureText(agentReport.actionAdvice, "暂无具体操作建议")}</p>
               </article>
               <article className="agent-analysis-highlight">
-                <span>建议标签</span>
+                <span>当前计划</span>
                 <strong>{ensureText(agentReport.actionTag, "待补充")}</strong>
-                <p>{ensureText(agentReport.positionInstruction, "暂无明确仓位动作")}</p>
+                <p>{ensureText(agentReport.planSummary, "暂无可执行计划")}</p>
               </article>
             </div>
 
@@ -254,6 +274,10 @@ export function FundSummaryCard({
                 <strong>{ensureText(agentReport.positionSizing, "暂无建议")}</strong>
               </article>
               <article className="detail-card">
+                <span>持仓背景</span>
+                <strong>{ensureText(agentReport.holdingContext, "暂无持仓背景")}</strong>
+              </article>
+              <article className="detail-card">
                 <span>更适合谁</span>
                 <strong>{ensureText(agentReport.suitableFor, "暂无结论")}</strong>
               </article>
@@ -263,7 +287,7 @@ export function FundSummaryCard({
               </article>
             </div>
 
-            <div className="agent-analysis-columns">
+            <div className="agent-analysis-flow">
               <article className="agent-analysis-section">
                 <h4>最近一周发生了什么</h4>
                 <p>{ensureText(agentReport.recentWeekSummary, "暂无最近一周变化说明")}</p>
@@ -273,13 +297,22 @@ export function FundSummaryCard({
                 {renderList(agentReport.recentWeekDrivers, "暂无变化原因说明")}
               </article>
               <article className="agent-analysis-section">
-                <h4>具体仓位动作</h4>
+                <h4>现在该怎么做</h4>
                 <p>{ensureText(agentReport.positionInstruction, "暂无明确仓位动作")}</p>
                 <p>建议幅度：{ensureText(agentReport.positionSizing, "暂无建议")}</p>
               </article>
-            </div>
-
-            <div className="agent-analysis-columns">
+              <article className="agent-analysis-section">
+                <h4>执行规则</h4>
+                {renderList(agentReport.executionRules, "暂无执行规则")}
+              </article>
+              <article className="agent-analysis-section">
+                <h4>重新评估条件</h4>
+                {renderList(agentReport.reEvaluationTriggers, "暂无重新评估条件")}
+              </article>
+              <article className="agent-analysis-section">
+                <h4>关键价位计划</h4>
+                {renderPlanLevels(agentReport.planLevels)}
+              </article>
               <article className="agent-analysis-section">
                 <h4>核心依据</h4>
                 {renderList(agentReport.reasoning, "暂无核心依据")}
