@@ -1,5 +1,7 @@
 import {
   calculateAnnualizedVolatility,
+  calculateBiasRate,
+  calculateBollingerBandsSeries,
   calculateMaxDrawdown,
   calculateMovingAverageSeries,
   calculateRangeReturn,
@@ -41,18 +43,26 @@ function buildTrendAnalysis(points: FundTrendPoint[], historyDays: number): Fund
   const ma10Map = calculateMovingAverageSeries(points, 10);
   const ma20Map = calculateMovingAverageSeries(points, 20);
   const ma60Map = calculateMovingAverageSeries(points, 60);
+  const boll20Map = calculateBollingerBandsSeries(points, 20);
   const windowPoints = sliceTrendByDays(points, historyDays);
   const startNav = windowPoints[0]?.nav ?? null;
 
-  const analysisPoints: FundTrendAnalysisPoint[] = windowPoints.map((point) => ({
-    date: point.date,
-    nav: point.nav,
-    rangeReturn: typeof startNav === "number" && startNav !== 0 ? roundNullable(((point.nav - startNav) / startNav) * 100, 2) ?? 0 : 0,
-    ma5: ma5Map.get(point.date) ?? null,
-    ma10: ma10Map.get(point.date) ?? null,
-    ma20: ma20Map.get(point.date) ?? null,
-    ma60: ma60Map.get(point.date) ?? null,
-  }));
+  const analysisPoints: FundTrendAnalysisPoint[] = windowPoints.map((point) => {
+    const boll20 = boll20Map.get(point.date);
+
+    return {
+      date: point.date,
+      nav: point.nav,
+      rangeReturn: typeof startNav === "number" && startNav !== 0 ? roundNullable(((point.nav - startNav) / startNav) * 100, 2) ?? 0 : 0,
+      ma5: ma5Map.get(point.date) ?? null,
+      ma10: ma10Map.get(point.date) ?? null,
+      ma20: ma20Map.get(point.date) ?? null,
+      ma60: ma60Map.get(point.date) ?? null,
+      bollUpper: boll20?.upper ?? null,
+      bollLower: boll20?.lower ?? null,
+      bollWidth20: boll20?.width ?? null,
+    };
+  });
 
   const latest = analysisPoints.at(-1);
   if (!latest) {
@@ -71,9 +81,12 @@ function buildTrendAnalysis(points: FundTrendPoint[], historyDays: number): Fund
       ma10: latest.ma10,
       ma20: latest.ma20,
       ma60: latest.ma60,
-      biasToMa10: typeof latest.ma10 === "number" && latest.ma10 !== 0 ? roundNullable(((latest.nav - latest.ma10) / latest.ma10) * 100, 2) : null,
-      biasToMa20: typeof latest.ma20 === "number" && latest.ma20 !== 0 ? roundNullable(((latest.nav - latest.ma20) / latest.ma20) * 100, 2) : null,
-      biasToMa60: typeof latest.ma60 === "number" && latest.ma60 !== 0 ? roundNullable(((latest.nav - latest.ma60) / latest.ma60) * 100, 2) : null,
+      bollUpper: latest.bollUpper,
+      bollLower: latest.bollLower,
+      bollWidth20: latest.bollWidth20,
+      biasToMa10: calculateBiasRate(latest.nav, latest.ma10),
+      biasToMa20: calculateBiasRate(latest.nav, latest.ma20),
+      biasToMa60: calculateBiasRate(latest.nav, latest.ma60),
       signal: detectSignal(latest.nav, latest.ma5, latest.ma10, latest.ma20),
     },
     returns: {

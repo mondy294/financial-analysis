@@ -266,6 +266,9 @@ export type FundTrendAnalysisPoint = {
   ma10: number | null;
   ma20: number | null;
   ma60: number | null;
+  bollUpper: number | null;
+  bollLower: number | null;
+  bollWidth20: number | null;
 };
 
 export type FundTrendAnalysis = {
@@ -280,6 +283,9 @@ export type FundTrendAnalysis = {
     ma10: number | null;
     ma20: number | null;
     ma60: number | null;
+    bollUpper: number | null;
+    bollLower: number | null;
+    bollWidth20: number | null;
     biasToMa10: number | null;
     biasToMa20: number | null;
     biasToMa60: number | null;

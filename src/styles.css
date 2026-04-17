@@ -752,6 +752,14 @@ th {
   margin-bottom: 14px;
 }
 
+.chart-formula-note {
+  margin-top: 8px;
+  max-width: 860px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(203, 213, 225, 0.84);
+}
+
 .overlay-toggle-row {
   gap: 10px;
 }

@@ -27,6 +27,7 @@ export type FundTrendInsights = {
   bollUpper: number | null;
   bollLower: number | null;
   bollWidth20: number | null;
+  deviationFromMa10: number | null;
   deviationFromMa20: number | null;
   deviationFromMa60: number | null;
   deviationFromCost: number | null;

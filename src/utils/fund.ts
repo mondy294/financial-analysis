@@ -144,6 +144,17 @@ function calculateMovingAverage(values: Array<number | null>, period: number, en
   return Number((sum / period).toFixed(4));
 }
 
+export function calculateBiasRate(value: number | null | undefined, base: number | null | undefined, digits = 2) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return null;
+  }
+  if (base === null || base === undefined || Number.isNaN(Number(base)) || Number(base) === 0) {
+    return null;
+  }
+
+  return Number(((((Number(value) - Number(base)) / Number(base)) * 100)).toFixed(digits));
+}
+
 function calculateBollingerBands(values: Array<number | null>, period: number, endIndex: number, multiplier = 2) {
   const window = getValidWindow(values, period, endIndex);
   if (!window) {
@@ -279,28 +290,24 @@ export function calculateRangeReturn(points: Array<{ nav: number | null }>) {
 export function calculateTrendInsights(points: FundTrendIndicatorPoint[], costNav?: number | null): FundTrendInsights {
   const latestPoint = [...points].reverse().find((point) => point.nav !== null) ?? null;
   const latestNav = latestPoint?.nav ?? null;
+  const ma10 = latestPoint?.ma10 ?? null;
   const ma20 = latestPoint?.ma20 ?? null;
   const ma60 = latestPoint?.ma60 ?? null;
   const normalizedCostNav = costNav !== null && costNav !== undefined && Number.isFinite(costNav) ? Number(costNav) : null;
 
-  const deviationFromMa20 = latestNav !== null && ma20 !== null && ma20 !== 0 ? Number((((latestNav - ma20) / ma20) * 100).toFixed(2)) : null;
-  const deviationFromMa60 = latestNav !== null && ma60 !== null && ma60 !== 0 ? Number((((latestNav - ma60) / ma60) * 100).toFixed(2)) : null;
-  const deviationFromCost = latestNav !== null && normalizedCostNav !== null && normalizedCostNav !== 0
-    ? Number((((latestNav - normalizedCostNav) / normalizedCostNav) * 100).toFixed(2))
-    : null;
-
   return {
     latestNav,
     ma5: latestPoint?.ma5 ?? null,
-    ma10: latestPoint?.ma10 ?? null,
+    ma10,
     ma20,
     ma60,
     bollUpper: latestPoint?.bollUpper ?? null,
     bollLower: latestPoint?.bollLower ?? null,
     bollWidth20: latestPoint?.bollWidth20 ?? null,
-    deviationFromMa20,
-    deviationFromMa60,
-    deviationFromCost,
+    deviationFromMa10: calculateBiasRate(latestNav, ma10),
+    deviationFromMa20: calculateBiasRate(latestNav, ma20),
+    deviationFromMa60: calculateBiasRate(latestNav, ma60),
+    deviationFromCost: calculateBiasRate(latestNav, normalizedCostNav),
     annualizedVolatility20d: calculateAnnualizedVolatility(points, 20),
     maxDrawdown: calculateMaxDrawdown(points),
   };

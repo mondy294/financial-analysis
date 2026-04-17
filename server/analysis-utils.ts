@@ -53,6 +53,70 @@ export function calculateMovingAverageSeries(points: FundTrendPoint[], period: n
   return result;
 }
 
+type BollingerBandSnapshot = {
+  mid: number | null;
+  upper: number | null;
+  lower: number | null;
+  width: number | null;
+};
+
+export function calculateBiasRate(value: number | null | undefined, base: number | null | undefined, digits = 2) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  if (typeof base !== "number" || !Number.isFinite(base) || base === 0) {
+    return null;
+  }
+
+  return roundNumber(((value - base) / base) * 100, digits);
+}
+
+export function calculateBollingerBandsSeries(points: FundTrendPoint[], period: number, multiplier = 2) {
+  const valid = toValidTrendPoints(points);
+  const result = new Map<string, BollingerBandSnapshot>();
+  const queue: number[] = [];
+  let sum = 0;
+  let sumSquares = 0;
+
+  for (const point of valid) {
+    queue.push(point.nav);
+    sum += point.nav;
+    sumSquares += point.nav ** 2;
+
+    if (queue.length > period) {
+      const removed = queue.shift() ?? 0;
+      sum -= removed;
+      sumSquares -= removed ** 2;
+    }
+
+    if (queue.length < period) {
+      result.set(point.date, {
+        mid: null,
+        upper: null,
+        lower: null,
+        width: null,
+      });
+      continue;
+    }
+
+    const mean = sum / period;
+    const variance = Math.max(sumSquares / period - mean ** 2, 0);
+    const deviation = Math.sqrt(variance);
+    const upper = mean + deviation * multiplier;
+    const lower = mean - deviation * multiplier;
+    const width = mean === 0 ? null : ((upper - lower) / mean) * 100;
+
+    result.set(point.date, {
+      mid: roundNumber(mean, 4),
+      upper: roundNumber(upper, 4),
+      lower: roundNumber(lower, 4),
+      width: width === null ? null : roundNumber(width, 2),
+    });
+  }
+
+  return result;
+}
+
 export function calculateTradingDayReturn(points: FundTrendPoint[], periodsBack: number) {
   const valid = toValidTrendPoints(points);
   if (valid.length <= periodsBack) {

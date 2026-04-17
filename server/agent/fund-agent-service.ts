@@ -167,6 +167,20 @@ function roundTo(value: number, digits: number) {
   return Number(value.toFixed(digits));
 }
 
+function calculateBollingerPositionPercent(nav: number | null | undefined, lower: number | null | undefined, upper: number | null | undefined) {
+  if (typeof nav !== "number" || !Number.isFinite(nav)) {
+    return null;
+  }
+  if (typeof lower !== "number" || !Number.isFinite(lower)) {
+    return null;
+  }
+  if (typeof upper !== "number" || !Number.isFinite(upper) || upper === lower) {
+    return null;
+  }
+
+  return roundTo(((nav - lower) / (upper - lower)) * 100, 2);
+}
+
 function shiftDateByDays(dateText: string, days: number) {
   const date = new Date(`${dateText}T00:00:00`);
   date.setDate(date.getDate() + days);
@@ -425,7 +439,31 @@ function fallbackReasoning(toolOutputs: Map<string, Record<string, unknown> | nu
 
   const biasToMa20 = normalizeNullableNumber(latest?.biasToMa20);
   if (typeof biasToMa20 === "number") {
-    reasons.push(`净值相对 MA20 乖离约 ${biasToMa20.toFixed(2)}%，说明当前离中期均线并不远。`);
+    const biasDescription = Math.abs(biasToMa20) >= 8
+      ? "和中期均线拉开得比较明显"
+      : Math.abs(biasToMa20) >= 3
+        ? "已经出现一定偏离"
+        : "说明当前离中期均线并不远";
+    reasons.push(`净值相对 MA20 乖离约 ${biasToMa20.toFixed(2)}%，${biasDescription}。`);
+  }
+
+  const bollWidth20 = normalizeNullableNumber(latest?.bollWidth20);
+  const bollPositionPercent = calculateBollingerPositionPercent(
+    normalizeNullableNumber(latest?.nav),
+    normalizeNullableNumber(latest?.bollLower),
+    normalizeNullableNumber(latest?.bollUpper),
+  );
+  if (typeof bollWidth20 === "number") {
+    const widthDescription = bollWidth20 >= 12 ? "带宽偏宽，短线波动在放大" : bollWidth20 <= 4 ? "带宽偏窄，走势更接近收敛等待方向" : "波动处在中性区间";
+    reasons.push(`20 日布林带宽约 ${bollWidth20.toFixed(2)}%，${widthDescription}。`);
+  }
+  if (typeof bollPositionPercent === "number") {
+    const positionDescription = bollPositionPercent >= 85
+      ? "净值已经贴近布林上轨，追高要更谨慎"
+      : bollPositionPercent <= 15
+        ? "净值逼近布林下轨，不能把弱势直接当成企稳"
+        : "净值仍在布林中部区域运行";
+    reasons.push(`当前布林带位置约在 ${bollPositionPercent.toFixed(2)}% 分位，${positionDescription}。`);
   }
 
   const return60 = normalizeNullableNumber(returns?.day60);
@@ -995,6 +1033,10 @@ function buildPreparedToolContext(input: {
       biasToMa10: latest.biasToMa10,
       biasToMa20: latest.biasToMa20,
       biasToMa60: latest.biasToMa60,
+      bollUpper: latest.bollUpper,
+      bollLower: latest.bollLower,
+      bollWidth20: latest.bollWidth20,
+      bollPositionPercent: calculateBollingerPositionPercent(latest.nav, latest.bollLower, latest.bollUpper),
       return5d: returns.day5,
       return10d: returns.day10,
       return20d: returns.day20,

@@ -9,6 +9,7 @@ import ReactECharts from "echarts-for-react/lib/core";
 import type { ChartRange, FundAgentForecast, FundTrendPoint } from "../types";
 import {
   buildTrendIndicators,
+  calculateBiasRate,
   calculateRangeReturn,
   calculateTrendInsights,
   filterTrendByRange,
@@ -175,10 +176,12 @@ export function ChartPanel({ points, costNav = null, forecast = null }: ChartPan
       { key: "ma10", label: "10 日均线", value: insights.ma10, format: formatNav, signed: false },
       { key: "ma20", label: "20 日均线", value: insights.ma20, format: formatNav, signed: false },
       { key: "ma60", label: "60 日均线", value: insights.ma60, format: formatNav, signed: false },
+      { key: "deviationFromMa10", label: "MA10 乖离率", value: insights.deviationFromMa10, format: formatPercent, signed: true },
+      { key: "deviationFromMa20", label: "MA20 乖离率", value: insights.deviationFromMa20, format: formatPercent, signed: true },
+      { key: "deviationFromMa60", label: "MA60 乖离率", value: insights.deviationFromMa60, format: formatPercent, signed: true },
       ...(hasCostLine
         ? [{ key: "deviationFromCost", label: "相对成本线", value: insights.deviationFromCost, format: formatPercent, signed: true }]
         : []),
-      { key: "deviationFromMa20", label: "相对 MA20 乖离率", value: insights.deviationFromMa20, format: formatPercent, signed: true },
       { key: "bollWidth20", label: "20 日布林带宽", value: insights.bollWidth20, format: formatPercent, signed: false },
       { key: "annualizedVolatility20d", label: "20 日年化波动率", value: insights.annualizedVolatility20d, format: formatPercent, signed: false },
       { key: "maxDrawdown", label: "区间最大回撤", value: insights.maxDrawdown, format: formatPercent, signed: true },
@@ -370,8 +373,10 @@ export function ChartPanel({ points, costNav = null, forecast = null }: ChartPan
           if (current) {
             const drift = toPercentChange(current.nav ?? null, firstNav);
             const axisValue = project(current.nav ?? null);
-            const deviationFromMa20 = current.nav && current.ma20 ? Number((((current.nav - current.ma20) / current.ma20) * 100).toFixed(2)) : null;
-            const deviationFromCost = current.nav && hasCostLine && costNav ? Number((((current.nav - costNav) / costNav) * 100).toFixed(2)) : null;
+            const deviationFromMa10 = calculateBiasRate(current.nav ?? null, current.ma10 ?? null);
+            const deviationFromMa20 = calculateBiasRate(current.nav ?? null, current.ma20 ?? null);
+            const deviationFromMa60 = calculateBiasRate(current.nav ?? null, current.ma60 ?? null);
+            const deviationFromCost = calculateBiasRate(current.nav ?? null, hasCostLine ? costNav : null);
 
             return [
               `<div style="font-weight:600;margin-bottom:6px;">悬浮点坐标</div>`,
@@ -379,16 +384,19 @@ export function ChartPanel({ points, costNav = null, forecast = null }: ChartPan
               `<div>纵轴（${axisMode === "percent" ? "涨跌幅" : "单位净值"}）：${axisValue === null ? "--" : formatAxisLabel(axisValue, axisMode)}</div>`,
               `<div>单位净值：${formatNav(current.nav ?? null)}</div>`,
               `<div>区间涨跌：${formatPercent(drift)}</div>`,
-              `<div style="margin-top:6px;opacity:0.82;">均线 / 带宽</div>`,
+              `<div style="margin-top:6px;opacity:0.82;">均线 / 布林带</div>`,
               `<div>MA5：${formatNav(current.ma5 ?? null)}</div>`,
               `<div>MA10：${formatNav(current.ma10 ?? null)}</div>`,
               `<div>MA20：${formatNav(current.ma20 ?? null)}</div>`,
               `<div>MA60：${formatNav(current.ma60 ?? null)}</div>`,
               `<div>BOLL 上轨：${formatNav(current.bollUpper ?? null)}</div>`,
               `<div>BOLL 下轨：${formatNav(current.bollLower ?? null)}</div>`,
+              `<div>BOLL 带宽：${formatPercent(current.bollWidth20 ?? null)}</div>`,
               ...(hasCostLine ? [`<div>成本线：${formatNav(costNav)}</div>`] : []),
-              `<div style="margin-top:6px;opacity:0.82;">位置判断</div>`,
-              `<div>相对 MA20：${formatPercent(deviationFromMa20)}</div>`,
+              `<div style="margin-top:6px;opacity:0.82;">乖离率（净值-均线）/均线</div>`,
+              `<div>MA10 乖离：${formatPercent(deviationFromMa10)}</div>`,
+              `<div>MA20 乖离：${formatPercent(deviationFromMa20)}</div>`,
+              `<div>MA60 乖离：${formatPercent(deviationFromMa60)}</div>`,
               ...(hasCostLine ? [`<div>相对成本：${formatPercent(deviationFromCost)}</div>`] : []),
               ...(forecastEntries.length > 0
                 ? [
@@ -660,6 +668,7 @@ export function ChartPanel({ points, costNav = null, forecast = null }: ChartPan
         <div>
           <h3>区间业绩图 + 技术指标 + 未来路径预测</h3>
           <p>主折线仍然是历史净值；如果已经跑过 AI 分析，最右侧会继续接出多条虚线预测分支，鼠标移上去会额外显示对应概率。</p>
+          <p className="chart-formula-note">乖离率统一按 (单位净值 - 对应均线) / 对应均线 × 100% 计算，BOLL 默认使用 20 日中轨 ± 2 倍标准差。</p>
         </div>
         <div className={`range-return ${signedClass(rangeReturn)}`}>{formatPercent(rangeReturn)}</div>
       </div>
