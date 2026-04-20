@@ -358,3 +358,12 @@ export type FundAgentBatchAnalysisResult = {
   durationMs: number;
   items: FundAgentBatchAnalysisItem[];
 };
+
+export type ModelProviderSettings = {
+  baseUrl: string;
+  model: string;
+  apiKeyConfigured: boolean;
+  apiKeyMasked: string | null;
+  hasCustomBaseUrl: boolean;
+  hasCustomApiKey: boolean;
+};

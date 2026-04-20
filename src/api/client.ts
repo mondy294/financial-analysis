@@ -5,6 +5,7 @@ import type {
   FundDetailResponse,
   HoldingDraft,
   HoldingItem,
+  ModelProviderSettings,
   ScreenerOptionResponse,
   ScreenerPreset,
   ScreenerQueryPayload,
@@ -49,6 +50,17 @@ export function analyzeFundWithAgent(fundCode: string, options?: { horizon?: str
 export async function getSavedFundAgentAnalysis(fundCode: string) {
   const payload = await request<{ item: FundAgentAnalysisRecord | null }>(`/api/agent/fund-analysis/${fundCode}`);
   return payload.item;
+}
+
+export function getModelProviderSettings() {
+  return request<ModelProviderSettings>("/api/settings/model");
+}
+
+export function saveModelProviderSettings(input: { baseUrl: string; apiKey?: string }) {
+  return request<ModelProviderSettings>("/api/settings/model", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
 }
 
 export function analyzeWatchlistWithAgent(options?: { horizon?: string; userQuestion?: string; codes?: string[] }) {

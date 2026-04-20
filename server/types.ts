@@ -97,6 +97,25 @@ export type PersistedCompareItem = {
   addedAt: string;
 };
 
+export type PersistedModelProviderSettings = {
+  baseUrl: string | null;
+  apiKey: string | null;
+};
+
+export type ModelProviderSettingsResponse = {
+  baseUrl: string;
+  model: string;
+  apiKeyConfigured: boolean;
+  apiKeyMasked: string | null;
+  hasCustomBaseUrl: boolean;
+  hasCustomApiKey: boolean;
+};
+
+export type ModelProviderSettingsUpdate = {
+  baseUrl?: string | null;
+  apiKey?: string | null;
+};
+
 export type ScreenerFundCategory = "主动" | "指数" | "纯债" | "固收+" | "QDII" | "FOF";
 export type ScreenerRankingKey = "return1m" | "return3m" | "return1y" | "lowDrawdown" | "lowVolatility" | "value" | "core" | "aggressive";
 export type ScreenerSortOrder = "asc" | "desc";

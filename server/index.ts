@@ -7,6 +7,7 @@ import { FundAgentService } from "./agent/fund-agent-service.js";
 import { analyzeFundAndPersist, analyzeWatchlistFundsAndPersist } from "./agent/fund-agent-batch-service.js";
 import { getFundPerformance } from "./fund-service.js";
 import { startFinancialMcpServer } from "./mcp/index.js";
+import { getModelProviderSettingsResponse, updateModelProviderSettings } from "./model-provider-settings-service.js";
 import {
   deleteScreenerPreset,
   getScreenerOptions,
@@ -182,6 +183,24 @@ app.get("/api/agent/fund-analysis/:code", async (request, response) => {
     const message = toErrorMessage(error);
     const statusCode = /基金编号必须是 6 位数字/.test(message) ? 400 : 500;
     response.status(statusCode).json({ error: message });
+  }
+});
+
+app.get("/api/settings/model", async (_request, response) => {
+  try {
+    response.json(await getModelProviderSettingsResponse());
+  } catch (error) {
+    response.status(500).json({ error: toErrorMessage(error) });
+  }
+});
+
+app.put("/api/settings/model", async (request, response) => {
+  try {
+    const baseUrl = typeof request.body?.baseUrl === "string" ? request.body.baseUrl : undefined;
+    const apiKey = typeof request.body?.apiKey === "string" ? request.body.apiKey : undefined;
+    response.json(await updateModelProviderSettings({ baseUrl, apiKey }));
+  } catch (error) {
+    response.status(400).json({ error: toErrorMessage(error) });
   }
 });
 

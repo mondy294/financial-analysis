@@ -4,9 +4,11 @@ import { fileURLToPath } from "node:url";
 import type {
   CollectionFile,
   FundUniverseCacheFile,
+  ModelProviderSettingsUpdate,
   PersistedCompareItem,
   PersistedFundAgentAnalysis,
   PersistedHoldingItem,
+  PersistedModelProviderSettings,
   PersistedScreenerPreset,
   PersistedWatchlistItem,
   ScreenerSectorCacheFile,
@@ -23,6 +25,7 @@ const fundUniverseFile = path.join(dataDir, "fund-universe-cache.json");
 const screenerSectorCacheFile = path.join(dataDir, "screener-sector-cache.json");
 const screenerPresetsFile = path.join(dataDir, "screener-presets.json");
 const fundAgentReportsFile = path.join(analysisCacheDir, "fund-agent-reports.json");
+const modelProviderSettingsFile = path.join(dataDir, "model-provider-settings.json");
 
 async function ensureDataFile<T>(filePath: string, fallback: T) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -137,4 +140,37 @@ export async function getFundAgentReports() {
 
 export async function saveFundAgentReports(items: PersistedFundAgentAnalysis[]) {
   await writeCollection<PersistedFundAgentAnalysis>(fundAgentReportsFile, items);
+}
+
+export async function getModelProviderSettings(): Promise<PersistedModelProviderSettings> {
+  const parsed = await readJsonFile<Partial<PersistedModelProviderSettings>>(modelProviderSettingsFile, {
+    baseUrl: null,
+    apiKey: null,
+  });
+
+  return {
+    baseUrl: typeof parsed.baseUrl === "string" && parsed.baseUrl.trim() ? parsed.baseUrl.trim() : null,
+    apiKey: typeof parsed.apiKey === "string" && parsed.apiKey.trim() ? parsed.apiKey.trim() : null,
+  };
+}
+
+export async function saveModelProviderSettings(input: ModelProviderSettingsUpdate) {
+  const current = await getModelProviderSettings();
+  const next: PersistedModelProviderSettings = {
+    baseUrl:
+      input.baseUrl === undefined
+        ? current.baseUrl
+        : typeof input.baseUrl === "string" && input.baseUrl.trim()
+          ? input.baseUrl.trim()
+          : null,
+    apiKey:
+      input.apiKey === undefined
+        ? current.apiKey
+        : typeof input.apiKey === "string" && input.apiKey.trim()
+          ? input.apiKey.trim()
+          : null,
+  };
+
+  await writeJsonFile<PersistedModelProviderSettings>(modelProviderSettingsFile, next);
+  return next;
 }

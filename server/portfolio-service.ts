@@ -74,6 +74,8 @@ export class PortfolioService {
         typeof estimatedMarketValue === "number" && typeof record.positionAmount === "number"
           ? roundNullable(estimatedMarketValue - record.positionAmount, 2)
           : null;
+      const currentProfitRateDecimal = divideNumbers(currentProfitAmount, record.positionAmount);
+      const estimatedProfitRateDecimal = divideNumbers(estimatedProfitAmount, record.positionAmount);
 
       return {
         code: record.code,
@@ -92,9 +94,9 @@ export class PortfolioService {
         currentMarketValue,
         estimatedMarketValue,
         currentProfitAmount,
-        currentProfitRate: divideNumbers(currentProfitAmount, record.positionAmount),
+        currentProfitRate: typeof currentProfitRateDecimal === "number" ? roundNullable(currentProfitRateDecimal * 100, 2) : null,
         estimatedProfitAmount,
-        estimatedProfitRate: divideNumbers(estimatedProfitAmount, record.positionAmount),
+        estimatedProfitRate: typeof estimatedProfitRateDecimal === "number" ? roundNullable(estimatedProfitRateDecimal * 100, 2) : null,
       };
     } catch {
       return {

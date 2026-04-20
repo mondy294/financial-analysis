@@ -3,8 +3,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import OpenAI from "openai";
 import { z } from "zod";
-import { getRequiredEnvValue, getEnvValue } from "../env.js";
 import { createFinancialMcpRegistry } from "../mcp/registry.js";
+import { resolveModelProviderRuntimeConfig } from "../model-provider-settings-service.js";
 import type {
   AgentToolTrace,
   FundAgentAnalysisResponse,
@@ -20,8 +20,6 @@ import type {
   FundTradePlanLevel,
   FundTradePlanSnapshot,
 } from "../types.js";
-
-const DEFAULT_MODEL = getEnvValue(["DEEPSEEK_MODEL"], "deepseek-reasoner") || "deepseek-reasoner";
 
 const DEFAULT_HORIZON = "未来 1-3 个月";
 const MAX_TOOL_ROUNDS = 6;
@@ -799,6 +797,7 @@ function buildSystemPrompt(skill: string, reference: string) {
     "你是项目内的基金走势分析 Agent。",
     "你必须优先调用项目提供的工具获取数据，再给出未来 1-3 个月走势判断和当前操作建议。",
     "你只能基于工具返回的数据发言，不得编造不存在的经理信息、宏观信息、持仓信息或收益承诺。",
+    "若工具没有给出具体指数点位、额外重仓股名单、板块涨跌阈值或其它数字锚点，禁止自行补数字；尤其不要凭空写指数点位和持仓细节。",
     "系统可能已预取核心工具结果与市场新闻摘要；这些都是真实工具输出，属于强制证据，不能忽略。",
     "无论用户是否主动提到新闻，你都要把近期市场新闻与基金当前、历史数据交叉验证，用来解释最近一周扰动和未来 1-3 个月潜在催化/风险。",
     "请明确区分：趋势判断、操作建议、风险提示、待观察指标、交易计划阈值。",
@@ -1176,11 +1175,6 @@ function formatTrackedToolSummary(toolName: string, structuredContent: Record<st
 
 export class FundAgentService {
   private readonly registry = createFinancialMcpRegistry();
-  private readonly client = new OpenAI({
-    apiKey: getRequiredEnvValue(["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "api_key"], "缺少 DeepSeek API Key，请在项目 .env 中配置。"),
-    baseURL: getEnvValue(["DEEPSEEK_BASE_URL"], "https://api.deepseek.com") || "https://api.deepseek.com",
-  });
-  private readonly model = DEFAULT_MODEL;
 
   private async executeTrackedTool<T extends Record<string, unknown>>(
     toolName: string,
@@ -1227,6 +1221,11 @@ export class FundAgentService {
     const fundCode = normalizeFundCode(request.fundCode);
     const horizon = String(request.horizon || DEFAULT_HORIZON).trim() || DEFAULT_HORIZON;
     const userQuestion = String(request.userQuestion || "").trim();
+    const runtimeConfig = await resolveModelProviderRuntimeConfig();
+    const client = new OpenAI({
+      apiKey: runtimeConfig.apiKey,
+      baseURL: runtimeConfig.baseUrl,
+    });
     const promptAssets = await loadPromptAssets();
     const toolTrace: AgentToolTrace[] = [];
     const toolOutputs = new Map<string, Record<string, unknown> | null>();
@@ -1312,8 +1311,8 @@ export class FundAgentService {
     ];
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
+      const completion = await client.chat.completions.create({
+        model: runtimeConfig.model,
         temperature: 0.15,
         messages: messages as never,
         tools: this.registry.listOpenAiToolDefinitions() as never,
@@ -1334,7 +1333,7 @@ export class FundAgentService {
           fundCode,
           fundName: resolvedFundName,
           generatedAt: new Date().toISOString(),
-          model: this.model,
+          model: runtimeConfig.model,
           toolTrace,
           report: parsedReport,
           forecast,

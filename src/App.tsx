@@ -18,6 +18,7 @@ import { ComparePage } from "./pages/ComparePage";
 import { HoldingsPage } from "./pages/HoldingsPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { ScreenerPage } from "./pages/ScreenerPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { WatchlistPage } from "./pages/WatchlistPage";
 import type {
   CompareItem,
@@ -64,6 +65,10 @@ const pageMetaMap: Record<string, PageMeta> = {
   "/compare": {
     title: "基金对比",
     description: "把候选基金先横着比，再决定谁值得继续盯、谁适合落进持有。",
+  },
+  "/settings": {
+    title: "模型设置",
+    description: "给本地 Agent 配上你自己的接口地址和 API Key，后续分析就走这里。",
   },
 };
 
@@ -334,6 +339,12 @@ export default function App() {
             </div>
             <em>{holdings.length}</em>
           </NavLink>
+          <NavLink to="/settings" className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}>
+            <div>
+              <strong>模型设置</strong>
+              <span>接口地址与 API Key</span>
+            </div>
+          </NavLink>
         </nav>
 
         <section className="sidebar-panel">
@@ -444,6 +455,7 @@ export default function App() {
               />
             }
           />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
     </div>

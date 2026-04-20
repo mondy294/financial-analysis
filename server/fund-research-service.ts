@@ -237,6 +237,7 @@ function buildRiskFlags(input: {
 }
 
 function buildObservationSignals(input: {
+  latestNav: number | null;
   ma20: number | null;
   ma60: number | null;
   holdingBreadth: FundHoldingBreadthResponse | null;
@@ -246,14 +247,24 @@ function buildObservationSignals(input: {
   const signals: string[] = [];
 
   if (typeof input.ma20 === "number") {
-    signals.push(`净值能否重新站上 ${formatNavLevel(input.ma20)}（MA20）并连续 2-3 个交易日不跌回。`);
+    const ma20Text = formatNavLevel(input.ma20);
+    if (typeof input.latestNav === "number" && input.latestNav >= input.ma20) {
+      signals.push(`若后续回踩 ${ma20Text}（MA20）附近，能否止跌并重新站稳。`);
+    } else {
+      signals.push(`净值能否重新站上 ${ma20Text}（MA20）并连续 2-3 个交易日不跌回。`);
+    }
   }
 
   if (typeof input.ma60 === "number") {
-    signals.push(`回踩 ${formatNavLevel(input.ma60)}（MA60）附近时，是否出现止跌而不是继续破位。`);
+    const ma60Text = formatNavLevel(input.ma60);
+    if (typeof input.latestNav === "number" && input.latestNav >= input.ma60) {
+      signals.push(`若回踩 ${ma60Text}（MA60）附近，是否出现承接而不是继续破位。`);
+    } else {
+      signals.push(`净值能否重新站上 ${ma60Text}（MA60），确认中期趋势开始修复。`);
+    }
   }
 
-  if (input.holdingBreadth) {
+  if (input.holdingBreadth && input.holdingBreadth.totalHoldings > 0) {
     signals.push(`重仓股上涨/下跌家数能否继续改善（当前 ${input.holdingBreadth.positiveCount}:${input.holdingBreadth.negativeCount}）。`);
   }
 
@@ -273,6 +284,8 @@ function buildPlanLevels(input: {
   ma10: number | null;
   ma20: number | null;
   ma60: number | null;
+  bollUpper: number | null;
+  biasToMa20: number | null;
   signal: FundTrendSignal;
   hasHolding: boolean;
   addOnDipText: string;
@@ -285,6 +298,11 @@ function buildPlanLevels(input: {
   const supportDeep = minValid([input.ma20, input.ma60]);
   const confirmNav = maxValid([input.ma10, input.ma20]);
   const reboundNav = maxValid([input.ma10, input.ma20, input.ma60]);
+  const overheatNav = maxValid([
+    input.bollUpper,
+    latestNav !== null ? roundNullable(latestNav * 1.03, 4) : null,
+    typeof latestNav === "number" && typeof input.biasToMa20 === "number" && input.biasToMa20 >= 8 ? latestNav : null,
+  ]);
   const riskBase = minValid([input.ma60, input.ma20, latestNav !== null ? latestNav * 0.95 : null]);
   const riskNav = typeof riskBase === "number" ? roundNullable(riskBase * 0.985, 4) : null;
 
@@ -317,6 +335,15 @@ function buildPlanLevels(input: {
           `若回踩更深但仍能守住 ${formatNavLevel(supportDeep)}，说明中期趋势还没坏，可执行第二笔。`,
           input.hasHolding ? input.addOnBreakoutText : "在试探仓基础上再补一笔，不要一次性打满。",
           "深一层支撑位守住，通常比浅回踩更能验证买盘承接。",
+        ),
+        createPlanLevel(
+          "减仓位",
+          overheatNav,
+          latestNav,
+          overheatNav === input.bollUpper ? "BOLL 上轨 / 过热区" : "短线过热区",
+          `若净值继续冲到 ${formatNavLevel(overheatNav)} 一带，但乖离仍明显偏大或继续贴近布林上轨，更像情绪扩张。`,
+          input.hasHolding ? input.reduceText : "未持有时不追高，继续等待回踩机会。",
+          "多头并不等于可以无限追价，短线过热区更适合先收缩动作、锁定一部分波动收益。",
         ),
         createPlanLevel(
           "风控线",
@@ -563,6 +590,8 @@ export class FundResearchService {
         ma10: latest.ma10,
         ma20: latest.ma20,
         ma60: latest.ma60,
+        bollUpper: latest.bollUpper,
+        biasToMa20: latest.biasToMa20,
         signal: latest.signal,
         hasHolding: Boolean(holding),
         addOnDipText: sizingSuggestion.addOnDip,
@@ -571,6 +600,7 @@ export class FundResearchService {
         initialProbeText: sizingSuggestion.initialProbe,
       }),
       observationSignals: buildObservationSignals({
+        latestNav: analysis.fund.latestNav,
         ma20: latest.ma20,
         ma60: latest.ma60,
         holdingBreadth,
