@@ -16,7 +16,7 @@ import type {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dataDir = path.resolve(__dirname, "../data");
+const dataDir = process.env.DATA_DIR?.trim() ? path.resolve(process.env.DATA_DIR.trim()) : path.resolve(__dirname, "../data");
 const analysisCacheDir = path.join(dataDir, "analysis-cache");
 const watchlistFile = path.join(dataDir, "watchlist.json");
 const holdingsFile = path.join(dataDir, "holdings.json");

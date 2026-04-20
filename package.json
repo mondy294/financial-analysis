@@ -8,6 +8,7 @@
     "dev:server": "tsx watch --tsconfig tsconfig.server.json server/index.ts",
     "dev:client": "vite --host 0.0.0.0 --port 4177",
     "build": "tsc -p tsconfig.server.json && vite build",
+    "start": "node dist-server/index.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.json --noEmit",
     "agent:smoke": "tsx --tsconfig tsconfig.server.json server/tests/fund-agent-smoke.ts",
     "agent:watchlist": "tsx --tsconfig tsconfig.server.json server/scripts/watchlist-agent-batch.ts",

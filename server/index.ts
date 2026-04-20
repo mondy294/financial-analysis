@@ -34,6 +34,7 @@ const __dirname = path.dirname(__filename);
 const distDir = path.resolve(__dirname, "../dist");
 const distIndexFile = path.join(distDir, "index.html");
 const port = Number(process.env.PORT || 7070);
+const enableMcpServer = /^(1|true|yes|on)$/i.test(String(process.env.ENABLE_MCP ?? ""));
 
 const app = express();
 const fundAgentService = new FundAgentService();
@@ -401,4 +402,6 @@ app.listen(port, () => {
   console.log(`Financial API server is running at http://localhost:${port}`);
 });
 
-startFinancialMcpServer();
+if (enableMcpServer) {
+  startFinancialMcpServer();
+}
