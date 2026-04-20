@@ -1,6 +1,6 @@
 # financial
 
-一个本地运行的基金管理台，支持基金查询、总览分析、自选列表和手动维护持有信息。
+一个支持本地运行、也可部署到 Vercel 的基金管理台，支持基金查询、总览分析、自选列表和手动维护持有信息。
 
 ## 主要功能
 
@@ -24,14 +24,17 @@
 
 ```text
 financial/
-├── data/                  # 自选、持有、筛选缓存等 JSON 持久化数据
+├── api/
+│   └── [...path].ts       # Vercel Function 入口，转发所有 /api/* 请求
+├── data/                  # 本地默认 JSON 数据与缓存种子
 ├── server/
 │   ├── mcp/               # Koa + MCP 股票工具暴露层
-│   ├── data-store.ts      # 本地 JSON 读写仓储
+│   ├── app.ts             # 可复用的 Express API 应用
+│   ├── data-store.ts      # 本地 / Vercel 数据目录适配
 │   ├── fund-service.ts    # 基金详情聚合服务
 │   ├── screener-service.ts# 基金筛选与主题板块服务
 │   ├── stock-service.ts   # 股票实时行情与基金持仓股服务
-│   └── index.ts           # Express API 主入口，同时拉起 MCP 服务
+│   └── index.ts           # 本地 Node 主入口，同时拉起 MCP 服务
 ├── src/
 │   ├── api/               # 前端 API 请求封装
 │   ├── components/        # 查询卡片、走势组件、基金详情卡等
@@ -40,6 +43,7 @@ financial/
 │   ├── utils/             # 格式化与区间筛选工具
 │   ├── App.tsx            # 管理台壳层、导航和路由
 │   └── main.tsx           # React 入口
+├── vercel.json            # Vercel 构建与 SPA 路由回退配置
 ├── index.html             # Vite 入口页
 ├── package.json
 ├── tsconfig.json
@@ -47,7 +51,7 @@ financial/
 └── vite.config.ts
 ```
 
-## 启动
+## 本地启动
 
 ```bash
 npm install
@@ -55,9 +59,40 @@ npm run dev
 ```
 
 - 前端管理台：`http://localhost:4177`
-- API 服务：`http://127.0.0.1:4176`
-- Financial MCP 服务：`http://127.0.0.1:4188/mcp`
-- MCP 健康检查：`http://127.0.0.1:4188/health`
+- API 服务：`http://localhost:7070`
+- Financial MCP 服务：`http://127.0.0.1:9090/mcp`
+- MCP 健康检查：`http://127.0.0.1:9090/health`
+
+## 部署到 Vercel
+
+### 1. 构建输出
+
+项目已经适配为：
+
+- 前端由 `Vite` 构建到 `dist/`
+- 后端通过 `api/[...path].ts` 作为 `Vercel Function` 提供 `/api/*`
+- 前端继续使用相对路径 `/api/...` 调接口，无需额外改动
+- React Router 通过 `vercel.json` 做 SPA 回退
+
+### 2. 需要配置的环境变量
+
+如果你要使用基金分析 Agent，建议至少在 Vercel 项目里配置：
+
+- `DEEPSEEK_API_KEY`
+- `DEEPSEEK_BASE_URL`（可选，不配则走默认值）
+- `DEEPSEEK_MODEL`（可选）
+
+### 3. 数据持久化说明
+
+为了兼容 Vercel 的只读部署文件系统，服务端在 `Vercel` 环境下会把可写数据目录切到 `/tmp/financial-data`，并在首次访问时从仓库里的 `data/` 拷贝初始 JSON 文件。
+
+这意味着：
+
+- 页面和 API **可以正常运行**
+- 自选、持有、筛选缓存、模型设置等写操作 **只保证当前运行实例内可用**
+- 这些数据 **不是长期持久化存储**，实例回收、扩缩容或重新部署后可能丢失
+
+如果你希望 Vercel 上的数据长期保存，下一步建议把这部分从 `JSON 文件` 迁移到真正的数据库或对象存储。
 
 ### MCP 已暴露工具
 

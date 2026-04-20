@@ -16,7 +16,12 @@ import type {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dataDir = path.resolve(__dirname, "../data");
+const bundledDataDir = path.resolve(__dirname, "../data");
+const dataDir = process.env.DATA_DIR?.trim()
+  ? path.resolve(process.env.DATA_DIR.trim())
+  : process.env.VERCEL
+    ? "/tmp/financial-data"
+    : bundledDataDir;
 const analysisCacheDir = path.join(dataDir, "analysis-cache");
 const watchlistFile = path.join(dataDir, "watchlist.json");
 const holdingsFile = path.join(dataDir, "holdings.json");
@@ -27,12 +32,34 @@ const screenerPresetsFile = path.join(dataDir, "screener-presets.json");
 const fundAgentReportsFile = path.join(analysisCacheDir, "fund-agent-reports.json");
 const modelProviderSettingsFile = path.join(dataDir, "model-provider-settings.json");
 
+async function seedDataFileIfPresent(filePath: string) {
+  const relativePath = path.relative(dataDir, filePath);
+  if (!relativePath || relativePath.startsWith("..")) {
+    return false;
+  }
+
+  const bundledFilePath = path.join(bundledDataDir, relativePath);
+
+  try {
+    const seeded = await fs.readFile(bundledFilePath, "utf-8");
+    await fs.writeFile(filePath, seeded, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureDataFile<T>(filePath: string, fallback: T) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
 
   try {
     await fs.access(filePath);
+    return;
   } catch {
+    if (await seedDataFileIfPresent(filePath)) {
+      return;
+    }
+
     await fs.writeFile(filePath, JSON.stringify(fallback, null, 2), "utf-8");
   }
 }
