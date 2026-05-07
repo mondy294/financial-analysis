@@ -1,0 +1,16 @@
+
+> financial-fund-console@2.0.0 agent:watchlist
+> tsx --tsconfig tsconfig.server.json server/scripts/watchlist-agent-batch.ts
+
+Watchlist batch analysis finished. total=11 succeeded=0 failed=11
+✖ 018049 402 Insufficient Balance
+✖ 015790 402 Insufficient Balance
+✖ 007950 402 Insufficient Balance
+✖ 023408 402 Insufficient Balance
+✖ 018147 402 Insufficient Balance
+✖ 025209 402 Insufficient Balance
+✖ 017462 402 Insufficient Balance
+✖ 004320 402 Insufficient Balance
+✖ 016389 402 Insufficient Balance
+✖ 013172 402 Insufficient Balance
+✖ 270042 402 Insufficient Balance

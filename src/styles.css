@@ -789,7 +789,7 @@ th {
 
 .echart-canvas {
   width: 100%;
-  height: clamp(640px, 70vh, 760px);
+  height: 500px;
 }
 
 .forecast-branch-row {
@@ -1783,7 +1783,7 @@ th {
   }
 
   .echart-canvas {
-    height: 420px;
+    height: 500px;
   }
 }
 
@@ -1881,7 +1881,7 @@ th {
   }
 
   .echart-canvas {
-    height: 360px;
+    height: 500px;
   }
 }
 

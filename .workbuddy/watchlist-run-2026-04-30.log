@@ -1,0 +1,16 @@
+
+> financial-fund-console@2.0.0 agent:watchlist
+> tsx --tsconfig tsconfig.server.json server/scripts/watchlist-agent-batch.ts
+
+Watchlist batch analysis finished. total=11 succeeded=6 failed=5
+✖ 018049 fetch failed
+✔ 015790 永赢高端装备智选混合发起C 2026-04-30T06:26:03.052Z
+✔ 007950 招商量化精选股票C 2026-04-30T06:27:16.235Z
+✔ 023408 华宝创业板人工智能ETF发起式联接C 2026-04-30T06:28:31.516Z
+✔ 018147 建信新兴市场混合(QDII)C 2026-04-30T06:30:03.751Z
+✔ 025209 永赢先锋半导体智选混合发起C 2026-04-30T06:31:21.127Z
+✖ 017462 fetch failed
+✖ 004320 fetch failed
+✖ 016389 fetch failed
+✔ 013172 华夏恒生互联网科技业ETF联接(QDII)C 2026-04-30T06:33:51.950Z
+✖ 270042 Expected ',' or ']' after array element in JSON at position 525 (line 8 column 17)

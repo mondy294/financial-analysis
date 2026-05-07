@@ -733,6 +733,7 @@ export function ChartPanel({ points, costNav = null, forecast = null }: ChartPan
         echarts={echarts}
         option={option}
         className="echart-canvas"
+        style={{ width: "100%", height: 500 }}
         notMerge
         lazyUpdate
         onEvents={{ legendselectchanged: handleLegendSelectChanged }}
