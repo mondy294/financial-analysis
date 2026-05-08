@@ -1,8 +1,20 @@
 import express from "express";
-import { getCompareList, getFundAgentReports, getHoldings, getWatchlist, saveCompareList, saveHoldings, saveWatchlist } from "./data-store.js";
+import {
+  getCompareList,
+  getFundAgentReports,
+  getHoldings,
+  getStockAgentReports,
+  getWatchlist,
+  saveCompareList,
+  saveHoldings,
+  saveWatchlist,
+} from "./data-store.js";
 import { FundAgentService } from "./agent/fund-agent-service.js";
+import { StockAgentService } from "./agent/stock-agent-service.js";
 import { analyzeFundAndPersist, analyzeWatchlistFundsAndPersist } from "./agent/fund-agent-batch-service.js";
+import { analyzeStockAndPersist } from "./agent/stock-agent-persist-service.js";
 import { getFundPerformance } from "./fund-service.js";
+import { StockAnalysisService } from "./stock-analysis-service.js";
 import { getModelProviderSettingsResponse, updateModelProviderSettings } from "./model-provider-settings-service.js";
 import {
   deleteScreenerPreset,
@@ -33,6 +45,14 @@ function validateCode(code: string) {
   const cleanCode = String(code || "").trim();
   if (!/^\d{6}$/.test(cleanCode)) {
     throw new Error("基金编号必须是 6 位数字。");
+  }
+  return cleanCode;
+}
+
+function validateStockCode(code: string) {
+  const cleanCode = String(code || "").trim();
+  if (!/^\d{6}$/.test(cleanCode)) {
+    throw new Error("股票代码必须是 6 位数字。");
   }
   return cleanCode;
 }
@@ -109,6 +129,8 @@ async function enrichCompareItems(items: PersistedCompareItem[]): Promise<Enrich
 function createApp() {
   const app = express();
   const fundAgentService = new FundAgentService();
+  const stockAgentService = new StockAgentService();
+  const stockAnalysisService = new StockAnalysisService();
 
   app.use(express.json());
 
@@ -122,6 +144,17 @@ function createApp() {
       response.json(payload);
     } catch (error) {
       response.status(500).json({ error: toErrorMessage(error) });
+    }
+  });
+
+  app.get("/api/stocks/:code", async (request, response) => {
+    try {
+      const payload = await stockAnalysisService.getStockAnalysis(validateStockCode(request.params.code), { historyDays: 365, klineLimit: 1200 });
+      response.json(payload);
+    } catch (error) {
+      const message = toErrorMessage(error);
+      const statusCode = /股票代码必须是 6 位数字/.test(message) ? 400 : 500;
+      response.status(statusCode).json({ error: message });
     }
   });
 
@@ -164,6 +197,24 @@ function createApp() {
     }
   });
 
+  app.post("/api/agent/stock-analysis", async (request, response) => {
+    try {
+      const stockCode = validateStockCode(String(request.body?.stockCode ?? ""));
+      const horizon = typeof request.body?.horizon === "string" ? request.body.horizon : null;
+      const userQuestion = typeof request.body?.userQuestion === "string" ? request.body.userQuestion : null;
+      const record = await analyzeStockAndPersist(stockAgentService, {
+        stockCode,
+        horizon,
+        userQuestion,
+      });
+      response.json(record);
+    } catch (error) {
+      const message = toErrorMessage(error);
+      const statusCode = /基金编号必须是 6 位数字|股票代码必须是 6 位数字/.test(message) ? 400 : 500;
+      response.status(statusCode).json({ error: message });
+    }
+  });
+
   app.get("/api/agent/fund-analysis/:code", async (request, response) => {
     try {
       const fundCode = validateCode(request.params.code);
@@ -173,6 +224,19 @@ function createApp() {
     } catch (error) {
       const message = toErrorMessage(error);
       const statusCode = /基金编号必须是 6 位数字/.test(message) ? 400 : 500;
+      response.status(statusCode).json({ error: message });
+    }
+  });
+
+  app.get("/api/agent/stock-analysis/:code", async (request, response) => {
+    try {
+      const stockCode = validateStockCode(request.params.code);
+      const payload = await getStockAgentReports();
+      const item = payload.items.find((record) => record.stockCode === stockCode) ?? null;
+      response.json({ item });
+    } catch (error) {
+      const message = toErrorMessage(error);
+      const statusCode = /基金编号必须是 6 位数字|股票代码必须是 6 位数字/.test(message) ? 400 : 500;
       response.status(statusCode).json({ error: message });
     }
   });

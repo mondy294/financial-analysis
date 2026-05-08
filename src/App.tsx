@@ -7,6 +7,7 @@ import {
   getCompareList,
   getFundDetail,
   getHoldings,
+  getStockDetail,
   getWatchlist,
   removeCompare,
   removeHolding,
@@ -14,11 +15,13 @@ import {
   saveHolding,
 } from "./api/client";
 import { FundSearchPanel } from "./components/FundSearchPanel";
+import { StockSearchPanel } from "./components/StockSearchPanel";
 import { ComparePage } from "./pages/ComparePage";
 import { HoldingsPage } from "./pages/HoldingsPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { ScreenerPage } from "./pages/ScreenerPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { StocksPage } from "./pages/StocksPage";
 import { WatchlistPage } from "./pages/WatchlistPage";
 import type {
   CompareItem,
@@ -26,6 +29,7 @@ import type {
   FundDetailResponse,
   HoldingDraft,
   HoldingItem,
+  StockAnalysisResponse,
   WatchlistItem,
 } from "./types";
 
@@ -54,6 +58,10 @@ const pageMetaMap: Record<string, PageMeta> = {
     title: "我的自选",
     description: "盯盘用这一页，保留重点基金，快速看最新净值、估值和阶段表现，也能一键批量跑 Agent 分析。",
   },
+  "/stocks": {
+    title: "股票分析",
+    description: "股票单独放一页：看开高低收、日 K、均线和布林带，再交给独立股票 Agent 做推理。",
+  },
   "/holdings": {
     title: "我的持有",
     description: "这里记录你自己的仓位信息：状态、收益率、持仓金额和备注，全都持久化到本地 JSON。",
@@ -80,6 +88,7 @@ export default function App() {
   const [watchlistLoading, setWatchlistLoading] = useState(true);
   const [compareLoading, setCompareLoading] = useState(true);
   const [spotlight, setSpotlight] = useState<FundDetailResponse | null>(null);
+  const [stockSpotlight, setStockSpotlight] = useState<StockAnalysisResponse | null>(null);
   const [holdings, setHoldings] = useState<HoldingItem[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [compareItems, setCompareItems] = useState<CompareItem[]>([]);
@@ -106,6 +115,7 @@ export default function App() {
   }, [location.pathname]);
 
   const showFundSearch = location.pathname === "/overview";
+  const showStockSearch = location.pathname === "/stocks";
 
   const spotlightHolding = useMemo(
     () => holdings.find((item) => item.code === spotlight?.fund.code) ?? null,
@@ -162,6 +172,20 @@ export default function App() {
       setNotice({ type: "success", message: `已加载 ${detail.fund.name}` });
     } catch (error) {
       setNotice({ type: "error", message: error instanceof Error ? error.message : "查询失败" });
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function handleStockSearch(code: string) {
+    setSearching(true);
+    try {
+      const detail = await getStockDetail(code);
+      setStockSpotlight(detail);
+      navigate("/stocks");
+      setNotice({ type: "success", message: `已加载 ${detail.stock.name}` });
+    } catch (error) {
+      setNotice({ type: "error", message: error instanceof Error ? error.message : "查询股票失败" });
     } finally {
       setSearching(false);
     }
@@ -301,8 +325,8 @@ export default function App() {
       <aside className="sidebar-shell">
         <div className="brand-panel">
           <span className="eyebrow">Personal Console</span>
-          <h1>基金管理台</h1>
-          <p>总览负责看细节，选基负责找候选，自选负责盯，对比负责横着比，持有负责记自己的仓位。</p>
+          <h1>投研管理台</h1>
+          <p>基金和股票分开处理：基金页继续负责总览、自选、对比和持有，股票页单独看 K 线、技术结构和 Agent 推理。</p>
         </div>
 
         <nav className="sidebar-nav">
@@ -324,6 +348,12 @@ export default function App() {
               <span>重点观察池</span>
             </div>
             <em>{watchlist.length}</em>
+          </NavLink>
+          <NavLink to="/stocks" className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}>
+            <div>
+              <strong>股票分析</strong>
+              <span>K 线、均线和独立 Agent</span>
+            </div>
           </NavLink>
           <NavLink to="/compare" className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}>
             <div>
@@ -350,8 +380,8 @@ export default function App() {
         <section className="sidebar-panel">
           <div>
             <span>当前聚焦</span>
-            <strong>{spotlight?.fund.name ?? "还没选基金"}</strong>
-            <p>{spotlight?.fund.code ?? "先输入 6 位基金编号再说"}</p>
+            <strong>{location.pathname === "/stocks" ? stockSpotlight?.stock.name ?? "还没选股票" : spotlight?.fund.name ?? "还没选基金"}</strong>
+            <p>{location.pathname === "/stocks" ? stockSpotlight?.stock.code ?? "先输入 6 位股票代码再说" : spotlight?.fund.code ?? "先输入 6 位基金编号再说"}</p>
           </div>
           <div className="sidebar-divider" />
           <div className="sidebar-mini-grid">
@@ -368,21 +398,22 @@ export default function App() {
               <strong>{compareItems.length}</strong>
             </article>
             <article>
-              <span>发现入口</span>
-              <strong>条件选基</strong>
+              <span>股票入口</span>
+              <strong>独立 K 线页</strong>
             </article>
           </div>
         </section>
       </aside>
 
       <main className="workspace-shell">
-        <header className={`workspace-header${showFundSearch ? "" : " workspace-header--single"}`}>
+        <header className={`workspace-header${showFundSearch || showStockSearch ? "" : " workspace-header--single"}`}>
           <div className="workspace-copy-block">
-            <span className="eyebrow">Financial Fund Console</span>
+            <span className="eyebrow">Financial Investment Console</span>
             <h2>{pageMeta.title}</h2>
             <p>{pageMeta.description}</p>
           </div>
           {showFundSearch ? <FundSearchPanel loading={searching} onSearch={handleSearch} /> : null}
+          {showStockSearch ? <StockSearchPanel loading={searching} onSearch={handleStockSearch} /> : null}
         </header>
 
         {notice ? <div className={`toast toast-${notice.type}`}>{notice.message}</div> : null}
@@ -430,6 +461,7 @@ export default function App() {
               />
             }
           />
+          <Route path="/stocks" element={<StocksPage spotlight={stockSpotlight} />} />
           <Route
             path="/compare"
             element={

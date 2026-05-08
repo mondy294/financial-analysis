@@ -929,6 +929,10 @@ th {
   min-width: 980px;
 }
 
+.stock-kline-table {
+  min-width: 980px;
+}
+
 .align-right {
   text-align: right !important;
 }

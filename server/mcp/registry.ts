@@ -13,8 +13,8 @@ import {
   RefreshFundUniverseCacheTool,
   SectorFundsTool,
 } from "./tools/fund-tools.js";
-import { FundMarketNewsTool } from "./tools/news-tools.js";
-import { FundHoldingStocksTool, RealtimeStockQuotesTool } from "./tools/stock-tools.js";
+import { FundMarketNewsTool, StockMarketNewsTool } from "./tools/news-tools.js";
+import { FundHoldingStocksTool, RealtimeStockQuotesTool, StockAnalysisTool, StockTradePlanTool } from "./tools/stock-tools.js";
 
 export function createFinancialMcpRegistry() {
   const context = createFinancialMcpContext();
@@ -22,6 +22,8 @@ export function createFinancialMcpRegistry() {
   return new McpToolRegistry([
     new RealtimeStockQuotesTool(context),
     new FundHoldingStocksTool(context),
+    new StockAnalysisTool(context),
+    new StockTradePlanTool(context),
     new FundAnalysisTool(context),
     new FundPeerBenchmarkTool(context),
     new FundHoldingBreadthTool(context),
@@ -33,6 +35,7 @@ export function createFinancialMcpRegistry() {
     new FundSectorsTool(context),
     new SectorFundsTool(context),
     new FundMarketNewsTool(context),
+    new StockMarketNewsTool(context),
     new RefreshFundUniverseCacheTool(context),
   ]);
 }

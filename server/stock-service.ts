@@ -1,4 +1,12 @@
-import type { FundHoldingStock, FundHoldingStocksLookupResponse, StockQuoteSnapshot } from "./types.js";
+import type {
+  FundHoldingStock,
+  FundHoldingStocksLookupResponse,
+  StockDetailResponse,
+  StockKLinePoint,
+  StockMeta,
+  StockPerformanceSummary,
+  StockQuoteSnapshot,
+} from "./types.js";
 
 type RawHoldingQuoteItem = {
   f12?: string;
@@ -6,11 +14,26 @@ type RawHoldingQuoteItem = {
   f2?: number | string;
   f3?: number | string;
   f4?: number | string;
+  f17?: number | string;
+  f15?: number | string;
+  f16?: number | string;
+  f18?: number | string;
+  f5?: number | string;
+  f6?: number | string;
 };
 
 type RawHoldingQuoteResponse = {
   data?: {
     diff?: RawHoldingQuoteItem[];
+  };
+};
+
+type RawKLineResponse = {
+  data?: {
+    code?: string;
+    name?: string;
+    market?: number;
+    klines?: string[];
   };
 };
 
@@ -113,6 +136,69 @@ function toSecId(code: string, exchange?: string | null, secId?: string | null) 
   return `${targetExchange === "SH" ? "1" : "0"}.${cleanCode}`;
 }
 
+function buildPricePerformanceSummary(kline: StockKLinePoint[]): StockPerformanceSummary {
+  const closes = kline.filter((item): item is StockKLinePoint & { close: number } => typeof item.close === "number" && Number.isFinite(item.close));
+  const latestDate = closes.at(-1)?.date ?? new Date().toISOString().slice(0, 10);
+  const ytdStart = `${latestDate.slice(0, 4)}-01-01`;
+
+  function tradingDayReturn(periodsBack: number) {
+    if (closes.length <= periodsBack) {
+      return null;
+    }
+    const latest = closes.at(-1)?.close;
+    const base = closes.at(-(periodsBack + 1))?.close;
+    if (typeof latest !== "number" || typeof base !== "number" || base === 0) {
+      return null;
+    }
+    return Number((((latest - base) / base) * 100).toFixed(2));
+  }
+
+  function rangeReturn(items: Array<StockKLinePoint & { close: number }>) {
+    const first = items[0]?.close;
+    const last = items.at(-1)?.close;
+    if (typeof first !== "number" || typeof last !== "number" || first === 0) {
+      return null;
+    }
+    return Number((((last - first) / first) * 100).toFixed(2));
+  }
+
+  const ytdItems = closes.filter((item) => item.date >= ytdStart);
+  const recent30 = closes.slice(-30).map((item) => item.close);
+
+  return {
+    oneWeek: tradingDayReturn(5),
+    oneMonth: tradingDayReturn(20),
+    threeMonths: tradingDayReturn(60),
+    sixMonths: tradingDayReturn(120),
+    oneYear: tradingDayReturn(250),
+    yearToDate: ytdItems.length >= 2 ? rangeReturn(ytdItems) : null,
+    sinceInception: closes.length >= 2 ? rangeReturn(closes) : null,
+    lowestRecentClose: recent30.length > 0 ? Math.min(...recent30) : null,
+    highestRecentClose: recent30.length > 0 ? Math.max(...recent30) : null,
+  };
+}
+
+function parseKLinePoint(line: string): StockKLinePoint | null {
+  const parts = line.split(",");
+  if (parts.length < 11) {
+    return null;
+  }
+
+  return {
+    date: parts[0] ?? "",
+    open: parseLooseNumber(parts[1]),
+    close: parseLooseNumber(parts[2]),
+    high: parseLooseNumber(parts[3]),
+    low: parseLooseNumber(parts[4]),
+    volume: parseLooseNumber(parts[5]),
+    amount: parseLooseNumber(parts[6]),
+    amplitude: parseLooseNumber(parts[7]),
+    changeRate: parseLooseNumber(parts[8]),
+    changeAmount: parseLooseNumber(parts[9]),
+    turnoverRate: parseLooseNumber(parts[10]),
+  };
+}
+
 async function fetchText(url: string, init?: RequestInit): Promise<string> {
   const response = await fetch(url, {
     ...init,
@@ -207,7 +293,7 @@ export async function getRealtimeStockQuotes(stocks: StockQuoteInput[]): Promise
 
   const deduped = [...new Map(normalized.map((item) => [`${item.secId}:${item.code}`, item])).values()];
   const secids = deduped.map((item) => item.secId).join(",");
-  const quoteUrl = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&fields=f12,f14,f2,f3,f4,f18&secids=${encodeURIComponent(secids)}`;
+  const quoteUrl = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&fields=f12,f14,f2,f3,f4,f17,f15,f16,f18,f5,f6&secids=${encodeURIComponent(secids)}`;
   const quotePayload = await fetchJson<RawHoldingQuoteResponse>(quoteUrl, {
     headers: {
       referer: "https://quote.eastmoney.com/",
@@ -224,6 +310,12 @@ export async function getRealtimeStockQuotes(stocks: StockQuoteInput[]): Promise
           latestPrice: parseNumber(item.f2),
           changeRate: parseNumber(item.f3),
           changeAmount: parseNumber(item.f4),
+          openPrice: parseNumber(item.f17),
+          highPrice: parseNumber(item.f15),
+          lowPrice: parseNumber(item.f16),
+          previousClose: parseNumber(item.f18),
+          volume: parseNumber(item.f5),
+          amount: parseNumber(item.f6),
         },
       ]),
   );
@@ -238,8 +330,76 @@ export async function getRealtimeStockQuotes(stocks: StockQuoteInput[]): Promise
       latestPrice: quote?.latestPrice ?? null,
       changeRate: quote?.changeRate ?? null,
       changeAmount: quote?.changeAmount ?? null,
+      openPrice: quote?.openPrice ?? null,
+      highPrice: quote?.highPrice ?? null,
+      lowPrice: quote?.lowPrice ?? null,
+      previousClose: quote?.previousClose ?? null,
+      volume: quote?.volume ?? null,
+      amount: quote?.amount ?? null,
     } satisfies StockQuoteSnapshot;
   });
+}
+
+export async function getStockKLine(code: string, options?: { exchange?: string | null; limit?: number; adjust?: 0 | 1 | 2 }) {
+  const cleanCode = normalizeStockCode(code);
+  const secId = toSecId(cleanCode, options?.exchange ?? null);
+  const limit = Math.min(Math.max(Number(options?.limit ?? 1200), 60), 2000);
+  const adjust = options?.adjust ?? 1;
+  const klineUrl = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent(secId)}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=${adjust}&end=20500101&lmt=${limit}`;
+  const payload = await fetchJson<RawKLineResponse>(klineUrl, {
+    headers: {
+      referer: `https://quote.eastmoney.com/concept/${cleanCode}.html`,
+    },
+  });
+
+  const items = (payload.data?.klines ?? [])
+    .map((line) => parseKLinePoint(line))
+    .filter((item): item is StockKLinePoint => Boolean(item && item.date));
+
+  return {
+    code: cleanCode,
+    name: payload.data?.name?.trim() || null,
+    exchange: inferExchange(cleanCode, secId),
+    secId,
+    items,
+  };
+}
+
+export async function getStockDetail(code: string, options?: { exchange?: string | null; klineLimit?: number }): Promise<StockDetailResponse> {
+  const cleanCode = normalizeStockCode(code);
+  const [quotes, klinePayload] = await Promise.all([
+    getRealtimeStockQuotes([{ code: cleanCode, exchange: options?.exchange ?? null }]),
+    getStockKLine(cleanCode, { exchange: options?.exchange ?? null, limit: options?.klineLimit ?? 1200 }),
+  ]);
+  const quote = quotes[0] ?? null;
+  const latestCandle = klinePayload.items.at(-1) ?? null;
+  const previousCandle = klinePayload.items.at(-2) ?? null;
+  const exchange = quote?.exchange ?? klinePayload.exchange ?? inferExchangeFromCode(cleanCode);
+  const stock: StockMeta = {
+    code: cleanCode,
+    name: quote?.name ?? klinePayload.name ?? cleanCode,
+    exchange,
+    secId: quote?.secId ?? klinePayload.secId,
+    latestTradeDate: latestCandle?.date ?? new Date().toISOString().slice(0, 10),
+    latestPrice: quote?.latestPrice ?? latestCandle?.close ?? null,
+    latestClose: latestCandle?.close ?? null,
+    openPrice: quote?.openPrice ?? latestCandle?.open ?? null,
+    highPrice: quote?.highPrice ?? latestCandle?.high ?? null,
+    lowPrice: quote?.lowPrice ?? latestCandle?.low ?? null,
+    previousClose: quote?.previousClose ?? previousCandle?.close ?? null,
+    changeRate: quote?.changeRate ?? latestCandle?.changeRate ?? null,
+    changeAmount: quote?.changeAmount ?? latestCandle?.changeAmount ?? null,
+    volume: quote?.volume ?? latestCandle?.volume ?? null,
+    amount: quote?.amount ?? latestCandle?.amount ?? null,
+    turnoverRate: latestCandle?.turnoverRate ?? null,
+    amplitude: latestCandle?.amplitude ?? null,
+  };
+
+  return {
+    stock,
+    performance: buildPricePerformanceSummary(klinePayload.items),
+    kline: klinePayload.items,
+  };
 }
 
 export async function getFundHoldingStocks(fundCode: string, topline = 10): Promise<FundHoldingStocksLookupResponse> {

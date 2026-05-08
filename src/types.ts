@@ -93,6 +93,129 @@ export type FundDetailResponse = {
   stockHoldingsReportDate: string | null;
 };
 
+export type StockTrendSignal = "多头排列" | "空头排列" | "震荡整理" | "数据不足";
+
+export type StockKLinePoint = {
+  date: string;
+  open: number | null;
+  close: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number | null;
+  amount: number | null;
+  amplitude: number | null;
+  changeRate: number | null;
+  changeAmount: number | null;
+  turnoverRate: number | null;
+};
+
+export type StockPerformanceSummary = {
+  oneWeek: number | null;
+  oneMonth: number | null;
+  threeMonths: number | null;
+  sixMonths: number | null;
+  oneYear: number | null;
+  yearToDate: number | null;
+  sinceInception: number | null;
+  lowestRecentClose: number | null;
+  highestRecentClose: number | null;
+};
+
+export type StockMeta = {
+  code: string;
+  name: string;
+  exchange: string | null;
+  secId: string;
+  latestTradeDate: string;
+  latestPrice: number | null;
+  latestClose: number | null;
+  openPrice: number | null;
+  highPrice: number | null;
+  lowPrice: number | null;
+  previousClose: number | null;
+  changeRate: number | null;
+  changeAmount: number | null;
+  volume: number | null;
+  amount: number | null;
+  turnoverRate: number | null;
+  amplitude: number | null;
+};
+
+export type StockTrendAnalysisPoint = {
+  date: string;
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  volume: number | null;
+  amount: number | null;
+  amplitude: number | null;
+  turnoverRate: number | null;
+  rangeReturn: number;
+  ma5: number | null;
+  ma10: number | null;
+  ma20: number | null;
+  ma60: number | null;
+  bollUpper: number | null;
+  bollLower: number | null;
+  bollWidth20: number | null;
+};
+
+export type StockTrendAnalysis = {
+  windowDays: number;
+  startDate: string | null;
+  endDate: string | null;
+  points: StockTrendAnalysisPoint[];
+  latest: {
+    date: string;
+    open: number;
+    close: number;
+    high: number;
+    low: number;
+    amplitude: number | null;
+    turnoverRate: number | null;
+    ma5: number | null;
+    ma10: number | null;
+    ma20: number | null;
+    ma60: number | null;
+    bollUpper: number | null;
+    bollLower: number | null;
+    bollWidth20: number | null;
+    biasToMa10: number | null;
+    biasToMa20: number | null;
+    biasToMa60: number | null;
+    dailyChangeRate: number | null;
+    bodyChangeRate: number | null;
+    upperShadowRate: number | null;
+    lowerShadowRate: number | null;
+    signal: StockTrendSignal;
+  };
+  returns: {
+    range: number | null;
+    day5: number | null;
+    day10: number | null;
+    day20: number | null;
+    day60: number | null;
+    day120: number | null;
+    day250: number | null;
+  };
+  risk: {
+    maxDrawdown30d: number | null;
+    maxDrawdown90d: number | null;
+    maxDrawdown1y: number | null;
+    volatility30d: number | null;
+    volatility90d: number | null;
+    volatility1y: number | null;
+  };
+};
+
+export type StockAnalysisResponse = {
+  stock: StockMeta;
+  performance: StockPerformanceSummary;
+  kline: StockKLinePoint[];
+  trendAnalysis: StockTrendAnalysis;
+};
+
 export type FundUniverseMetrics = {
   return1w: number | null;
   return1m: number | null;
@@ -332,6 +455,21 @@ export type FundAgentAnalysisResponse = {
 };
 
 export type FundAgentAnalysisRecord = FundAgentAnalysisResponse & {
+  updatedAt: string;
+};
+
+export type StockAgentAnalysisResponse = {
+  runId: string;
+  stockCode: string;
+  stockName: string | null;
+  generatedAt: string;
+  model: string;
+  toolTrace: AgentToolTrace[];
+  report: FundAgentReport;
+  forecast: FundAgentForecast | null;
+};
+
+export type StockAgentAnalysisRecord = StockAgentAnalysisResponse & {
   updatedAt: string;
 };
 

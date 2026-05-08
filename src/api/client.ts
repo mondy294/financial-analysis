@@ -11,6 +11,8 @@ import type {
   ScreenerQueryPayload,
   ScreenerQueryResponse,
   ScreenerSectorStat,
+  StockAgentAnalysisRecord,
+  StockAnalysisResponse,
   WatchlistItem,
 } from "../types";
 
@@ -36,6 +38,10 @@ export function getFundDetail(code: string) {
   return request<FundDetailResponse>(`/api/funds/${code}`);
 }
 
+export function getStockDetail(code: string) {
+  return request<StockAnalysisResponse>(`/api/stocks/${code}`);
+}
+
 export function analyzeFundWithAgent(fundCode: string, options?: { horizon?: string; userQuestion?: string }) {
   return request<FundAgentAnalysisRecord>("/api/agent/fund-analysis", {
     method: "POST",
@@ -49,6 +55,22 @@ export function analyzeFundWithAgent(fundCode: string, options?: { horizon?: str
 
 export async function getSavedFundAgentAnalysis(fundCode: string) {
   const payload = await request<{ item: FundAgentAnalysisRecord | null }>(`/api/agent/fund-analysis/${fundCode}`);
+  return payload.item;
+}
+
+export function analyzeStockWithAgent(stockCode: string, options?: { horizon?: string; userQuestion?: string }) {
+  return request<StockAgentAnalysisRecord>("/api/agent/stock-analysis", {
+    method: "POST",
+    body: JSON.stringify({
+      stockCode,
+      horizon: options?.horizon,
+      userQuestion: options?.userQuestion,
+    }),
+  });
+}
+
+export async function getSavedStockAgentAnalysis(stockCode: string) {
+  const payload = await request<{ item: StockAgentAnalysisRecord | null }>(`/api/agent/stock-analysis/${stockCode}`);
   return payload.item;
 }
 

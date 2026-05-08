@@ -10,6 +10,7 @@ import type {
   PersistedHoldingItem,
   PersistedModelProviderSettings,
   PersistedScreenerPreset,
+  PersistedStockAgentAnalysis,
   PersistedWatchlistItem,
   ScreenerSectorCacheFile,
 } from "./types.js";
@@ -30,6 +31,7 @@ const fundUniverseFile = path.join(dataDir, "fund-universe-cache.json");
 const screenerSectorCacheFile = path.join(dataDir, "screener-sector-cache.json");
 const screenerPresetsFile = path.join(dataDir, "screener-presets.json");
 const fundAgentReportsFile = path.join(analysisCacheDir, "fund-agent-reports.json");
+const stockAgentReportsFile = path.join(analysisCacheDir, "stock-agent-reports.json");
 const modelProviderSettingsFile = path.join(dataDir, "model-provider-settings.json");
 
 async function seedDataFileIfPresent(filePath: string) {
@@ -167,6 +169,14 @@ export async function getFundAgentReports() {
 
 export async function saveFundAgentReports(items: PersistedFundAgentAnalysis[]) {
   await writeCollection<PersistedFundAgentAnalysis>(fundAgentReportsFile, items);
+}
+
+export async function getStockAgentReports() {
+  return readCollection<PersistedStockAgentAnalysis>(stockAgentReportsFile);
+}
+
+export async function saveStockAgentReports(items: PersistedStockAgentAnalysis[]) {
+  await writeCollection<PersistedStockAgentAnalysis>(stockAgentReportsFile, items);
 }
 
 export async function getModelProviderSettings(): Promise<PersistedModelProviderSettings> {

@@ -44,7 +44,7 @@ function pickNewsRelatedItems(items: string[], limit: number) {
 }
 
 function findNewsTrace(toolTrace: AgentToolTrace[]) {
-  return [...toolTrace].reverse().find((item) => item.toolName === "get_fund_market_news") ?? null;
+  return [...toolTrace].reverse().find((item) => item.toolName === "get_fund_market_news" || item.toolName === "get_stock_market_news") ?? null;
 }
 
 export function FundAgentNewsDigest({ report, toolTrace }: FundAgentNewsDigestProps) {
