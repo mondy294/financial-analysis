@@ -1,0 +1,17 @@
+-r requirements.txt
+
+# --- 测试 ---
+pytest>=8.2.0
+pytest-cov>=5.0.0
+pytest-mock>=3.14.0
+freezegun>=1.5.0                # 冻结时间，测调度用
+
+# --- 代码质量 ---
+ruff>=0.5.0                     # 一站式 lint + format（比 black+flake8+isort 快 100 倍）
+mypy>=1.10.0
+types-requests
+pandas-stubs
+
+# --- 开发辅助 ---
+ipython>=8.24.0
+jupyterlab>=4.2.0               # 因子探索/回测分析用

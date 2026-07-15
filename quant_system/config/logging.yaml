@@ -1,0 +1,13 @@
+# loguru 配置样例（infra/logger.py 会读取）
+handlers:
+  - sink: sys.stderr
+    format: "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+    level: INFO
+    colorize: true
+  - sink: "logs/quant_system_{time:YYYY-MM-DD}.log"
+    format: "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} | {message}"
+    level: DEBUG
+    rotation: "50 MB"
+    retention: "30 days"
+    encoding: utf-8
+    enqueue: true    # 多进程安全

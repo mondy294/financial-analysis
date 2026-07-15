@@ -1,0 +1,51 @@
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.installed.cfg
+
+# ============ 虚拟环境 ============
+.venv/
+venv/
+env/
+.python-version
+
+# ============ IDE ============
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# ============ 测试 & 类型 ============
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ============ 项目产物（不入库）============
+.env
+data_cache/
+logs/
+reports/*.md
+reports/*.html
+reports/backtest/
+!reports/.gitkeep
+
+# ============ 数据库 ============
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ============ Jupyter ============
+.ipynb_checkpoints/
+*.ipynb
