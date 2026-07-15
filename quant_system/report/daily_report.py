@@ -20,7 +20,27 @@ from quant_system.config.settings import Settings, get_settings
 from quant_system.data.repository import Repositories
 from quant_system.database.models import DailyReport, DailyReportItem, DataQualityCheck
 from quant_system.report.charts import kline_mini_html
+from quant_system.strategy.risk_filter import REASON_DESCRIPTIONS as HARD_REASON_DESC
+from quant_system.strategy.scoring import (
+    SCORING_REASON_DESCRIPTIONS as SCORING_REASON_DESC,
+)
 from quant_system.strategy.stock_selector import SelectionReport
+
+
+def _reason_desc(reason: str) -> str:
+    """把硬过滤 reason 常量转成中文描述。"""
+    return (
+        HARD_REASON_DESC.get(reason)
+        or SCORING_REASON_DESC.get(reason)
+        or reason
+    )
+
+
+# 阶段 A：类别到中文的展示映射（用于共振度标签）
+_CATEGORY_CN: dict[str, str] = {
+    "trend": "趋势", "reversal": "反转",
+    "volume_price": "量价", "fundamental": "基本面",
+}
 
 
 @dataclass
@@ -40,7 +60,9 @@ def _render_markdown(
     stock_name_map: dict[str, str],
     dq_summary: dict[str, int],
     settings: Settings,
+    ai_advice: dict[str, str] | None = None,
 ) -> str:
+    ai_advice = ai_advice or {}
     lines: list[str] = []
     d = selection.trade_date
     lines.append(f"# 每日推荐 · {d}\n")
@@ -48,13 +70,28 @@ def _render_markdown(
     # 概览
     lines.append("## 一、概览\n")
     lines.append(f"- **交易日**：{d}")
+    lines.append(f"- **市场态势（Regime）**：{getattr(selection, 'regime', 'UNKNOWN')}")
     lines.append(f"- **股票池**：{settings.stock_pool.pool.value}")
     lines.append(f"- **板块过滤**：{settings.board_filter}")
     lines.append(f"- **特征总数**：{selection.total_features}")
     lines.append(f"- **板块过滤后**：{selection.after_board_filter}")
     lines.append(f"- **数据质量过滤后**：{selection.after_dq_filter}")
+    after_hard = getattr(selection, "after_hard_filter", None)
+    if after_hard is not None:
+        lines.append(f"- **风险硬过滤后**：{after_hard}")
     lines.append(f"- **命中策略的股票数**：{selection.hit_count}")
     lines.append(f"- **本报告 Top**：{len(selection.top_stocks)}")
+
+    # v2 新增：硬过滤汇总
+    hard_filtered = getattr(selection, "hard_filtered", []) or []
+    if hard_filtered:
+        by_reason: dict[str, int] = {}
+        for f in hard_filtered:
+            by_reason[f["reason"]] = by_reason.get(f["reason"], 0) + 1
+        detail = "、".join(
+            f"{_reason_desc(k)} {v} 只" for k, v in sorted(by_reason.items())
+        )
+        lines.append(f"- **风险剔除**：共 {len(hard_filtered)} 只 · {detail}")
     lines.append("")
 
     # 策略命中分布
@@ -76,11 +113,38 @@ def _render_markdown(
         for i, s in enumerate(selection.top_stocks, 1):
             name = stock_name_map.get(s.code, s.code)
             lines.append(f"### {i}. {name}（{s.code}）· 评分 **{s.final_score:.2f}**\n")
-            lines.append(f"- 技术面：{s.tech_score:.2f}｜资金面：{s.capital_score:.2f}｜基本面：{s.fundamental_score:.2f}")
+            lines.append(
+                f"- 技术面：{s.tech_score:.2f}｜资金面：{s.capital_score:.2f}"
+                f"｜基本面：{s.fundamental_score:.2f}"
+            )
+
+            # v2 新增：共振度标签
+            resonance_cats = getattr(s, "resonance_categories", []) or []
+            resonance_count = getattr(s, "resonance_count", 0)
+            if resonance_cats:
+                cats_cn = "+".join(_CATEGORY_CN.get(c, c) for c in resonance_cats)
+                lines.append(f"- 共振度：**{resonance_count} 类**（{cats_cn}）")
+
             lines.append(f"- 命中策略：{'、'.join(s.hit_strategies)}")
-            lines.append("- 理由：")
-            for r in s.reasons:
-                lines.append(f"  - {r}")
+
+            # v2 新增：风险标记（红色警告）
+            risk_flags = getattr(s, "risk_flags", []) or []
+            if risk_flags:
+                lines.append(f"- ⚠️ **风险提示**：{'；'.join(risk_flags)}")
+
+            # 正向理由（v2 优先用 positive_reasons，向后兼容用 reasons）
+            positive = getattr(s, "positive_reasons", None) or s.reasons
+            if positive:
+                lines.append("- 理由：")
+                for r in positive:
+                    lines.append(f"  - {r}")
+
+            # AI 分析（可选）
+            advice = ai_advice.get(s.code)
+            if advice:
+                lines.append("")
+                lines.append("#### AI 分析")
+                lines.append(advice)
             lines.append("")
 
     # 数据质量摘要
@@ -134,6 +198,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   th, td {{ border: 1px solid #ddd; padding: 6px 14px; text-align: left; }}
   th {{ background: #fafafa; }}
   .overview li {{ font-size: 14px; }}
+  .ai-advice {{ margin-top: 14px; padding: 12px 16px; background: #f7f9fc;
+                border-left: 4px solid #4a90e2; border-radius: 4px; font-size: 14px; }}
+  .ai-advice .ai-title {{ font-weight: 600; color: #4a90e2; margin-bottom: 6px; font-size: 13px; }}
+  .ai-advice p {{ margin: 6px 0; line-height: 1.6; }}
+  .resonance {{ display: inline-block; background: #eaf5ea; color: #2c7a2c; padding: 2px 10px;
+                border-radius: 4px; font-size: 12px; margin-left: 8px; font-weight: 600; }}
+  .risk-flags {{ margin: 10px 0; padding: 10px 14px; background: #fff5f5;
+                 border-left: 4px solid #e74c3c; border-radius: 4px;
+                 color: #a94442; font-size: 13px; }}
+  .risk-flags .risk-title {{ font-weight: 600; margin-right: 6px; }}
+  .filter-summary {{ padding: 10px 14px; background: #fafafa; border-left: 3px solid #ccc;
+                     border-radius: 4px; margin: 10px 0; font-size: 13px; color: #555; }}
   .footer {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; color: #999; font-size: 12px; }}
 </style>
 </head>
@@ -142,10 +218,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 <h2>一、概览</h2>
 <ul class="overview">
-  <li>股票池：{pool}｜板块过滤：{board}</li>
-  <li>特征总数：{total} → 板块后 {after_board} → 数据质量后 {after_dq}</li>
+  <li>市场态势（Regime）：<b>{regime}</b>｜股票池：{pool}｜板块过滤：{board}</li>
+  <li>特征总数：{total} → 板块后 {after_board} → 数据质量后 {after_dq} → 风险硬过滤后 {after_hard}</li>
   <li>命中策略的股票数：<b>{hit_count}</b>｜Top {top_n}</li>
 </ul>
+{filter_summary_html}
 
 <h2>二、策略命中分布</h2>
 {strategy_table}
@@ -171,7 +248,9 @@ def _render_html(
     dq_summary: dict[str, int],
     repos: Repositories,
     settings: Settings,
+    ai_advice: dict[str, str] | None = None,
 ) -> str:
+    ai_advice = ai_advice or {}
     d = selection.trade_date
 
     # 策略命中分布
@@ -195,11 +274,59 @@ def _render_html(
             reasons_html = "".join(f"<li>{r}</li>" for r in s.reasons)
             chart_html = kline_mini_html(s.code, d, repos, lookback_days=60)
 
+            # AI 分析（可选）：markdown 里 ** 加粗等直接放进 HTML 里可能不渲染，
+            # 用 <pre>-friendly 但保留基础换行 & 加粗
+            advice = ai_advice.get(s.code)
+            advice_html = ""
+            if advice:
+                # 简单的 markdown → html 处理：** → <b>，换行 → <br>
+                import html as _html
+                import re as _re
+                _safe = _html.escape(advice)
+                _safe = _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _safe)
+                # 空行分段 → 段落
+                paragraphs = [
+                    p.strip().replace("\n", "<br>")
+                    for p in _safe.split("\n\n") if p.strip()
+                ]
+                advice_html = (
+                    '<div class="ai-advice">'
+                    '<div class="ai-title">🤖 AI 分析</div>'
+                    + "".join(f"<p>{p}</p>" for p in paragraphs)
+                    + "</div>"
+                )
+
+            # v2：共振度标签
+            resonance_cats = getattr(s, "resonance_categories", []) or []
+            resonance_count = getattr(s, "resonance_count", 0)
+            resonance_html = ""
+            if resonance_cats:
+                cats_cn = "+".join(_CATEGORY_CN.get(c, c) for c in resonance_cats)
+                resonance_html = (
+                    f'<span class="resonance">共振 {resonance_count} 类·{cats_cn}</span>'
+                )
+
+            # v2：风险提示
+            risk_flags = getattr(s, "risk_flags", []) or []
+            risk_html = ""
+            if risk_flags:
+                items = "；".join(risk_flags)
+                risk_html = (
+                    f'<div class="risk-flags">'
+                    f'<span class="risk-title">⚠️ 风险提示：</span>{items}'
+                    f'</div>'
+                )
+
+            # 正向理由优先
+            positive = getattr(s, "positive_reasons", None) or s.reasons
+            reasons_html = "".join(f"<li>{r}</li>" for r in positive)
+
             cards.append(f"""
             <div class="stock-card">
               <div class="stock-header">
                 <div>
                   <span class="stock-title">#{i} {name} · {s.code}</span>
+                  {resonance_html}
                 </div>
                 <div class="stock-score">{s.final_score:.2f}</div>
               </div>
@@ -207,8 +334,10 @@ def _render_html(
                 技术面 {s.tech_score:.2f}｜资金面 {s.capital_score:.2f}｜基本面 {s.fundamental_score:.2f}
               </div>
               <div class="stock-strategies">{tags}</div>
+              {risk_html}
               <ul class="reasons">{reasons_html}</ul>
               {chart_html}
+              {advice_html}
             </div>
             """)
         stock_cards = "\n".join(cards)
@@ -223,15 +352,36 @@ def _render_html(
                 rows += f"<tr><td>{sev}</td><td>{dq_summary[sev]}</td></tr>"
         dq_table = f"<table><tr><th>严重级别</th><th>数量</th></tr>{rows}</table>"
 
+    # v2: 硬过滤汇总
+    hard_filtered = getattr(selection, "hard_filtered", []) or []
+    after_hard = getattr(selection, "after_hard_filter", None)
+    if after_hard is None:
+        after_hard = selection.after_dq_filter
+    if hard_filtered:
+        by_reason: dict[str, int] = {}
+        for f in hard_filtered:
+            by_reason[f["reason"]] = by_reason.get(f["reason"], 0) + 1
+        detail = "、".join(
+            f"{_reason_desc(k)} <b>{v}</b> 只" for k, v in sorted(by_reason.items())
+        )
+        filter_summary_html = (
+            f'<div class="filter-summary">🔍 风险剔除共 <b>{len(hard_filtered)}</b> 只 · {detail}</div>'
+        )
+    else:
+        filter_summary_html = ""
+
     return HTML_TEMPLATE.format(
         trade_date=d.isoformat(),
+        regime=getattr(selection, "regime", "UNKNOWN"),
         pool=settings.stock_pool.pool.value,
         board=settings.board_filter,
         total=selection.total_features,
         after_board=selection.after_board_filter,
         after_dq=selection.after_dq_filter,
+        after_hard=after_hard,
         hit_count=selection.hit_count,
         top_n=len(selection.top_stocks),
+        filter_summary_html=filter_summary_html,
         strategy_table=strategy_table,
         stock_cards=stock_cards,
         dq_table=dq_table,
@@ -274,17 +424,34 @@ def generate_report(
     )
     dq_summary = {sev: int(cnt) for sev, cnt in session.execute(stmt)}
 
+    # AI 分析（如果启用）：针对 Top N 股票，每只调用一次 LLM 拿建议
+    ai_advice: dict[str, str] = {}
+    if settings.ai.enabled and settings.ai.api_key and selection.top_stocks:
+        try:
+            from quant_system.ai.analyzer import (
+                analyze_stocks,
+                build_inputs_from_selection,
+            )
+            inputs = build_inputs_from_selection(selection, repos, stock_name_map)
+            ai_advice = analyze_stocks(inputs)
+        except Exception as e:
+            logger.warning("AI 分析异常，报告将不含 AI 建议: {}", e)
+
     md_path: Path | None = None
     html_path: Path | None = None
 
     if "md" in formats:
-        md_content = _render_markdown(selection, stock_name_map, dq_summary, settings)
+        md_content = _render_markdown(
+            selection, stock_name_map, dq_summary, settings, ai_advice,
+        )
         md_path = out_dir / f"{d.isoformat()}.md"
         md_path.write_text(md_content, encoding="utf-8")
         logger.info("Markdown 日报写入: {}", md_path)
 
     if "html" in formats:
-        html_content = _render_html(selection, stock_name_map, dq_summary, repos, settings)
+        html_content = _render_html(
+            selection, stock_name_map, dq_summary, repos, settings, ai_advice,
+        )
         html_path = out_dir / f"{d.isoformat()}.html"
         html_path.write_text(html_content, encoding="utf-8")
         logger.info("HTML 日报写入: {}", html_path)

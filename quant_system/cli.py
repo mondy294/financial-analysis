@@ -467,26 +467,62 @@ def select(
             repos.job_log.finish_job(job_id, "FAILED", error=str(e))
             raise
 
-    # 展示
-    table = Table(title=f"选股结果 · {d}")
+    # 展示（附带股票名称）
+    with session_scope() as _s2:
+        _repos2 = build_repositories(_s2)
+        codes_in_top = [s.code for s in report_obj.top_stocks]
+        name_map: dict[str, str] = {}
+        if codes_in_top:
+            from sqlalchemy import select as _sel
+
+            from quant_system.database.models import StockBasic
+            rows = _s2.execute(
+                _sel(StockBasic.code, StockBasic.name).where(
+                    StockBasic.code.in_(codes_in_top)
+                )
+            ).all()
+            name_map = {c: n for c, n in rows}
+
+    table = Table(title=f"选股结果 · {d}（regime={getattr(report_obj, 'regime', 'UNKNOWN')}）")
     table.add_column("#", justify="right")
     table.add_column("code")
+    table.add_column("name")
     table.add_column("score", justify="right")
     table.add_column("技术", justify="right")
     table.add_column("资金", justify="right")
     table.add_column("基本", justify="right")
+    table.add_column("共振")
     table.add_column("命中策略")
+    table.add_column("风险")
 
     for i, s in enumerate(report_obj.top_stocks, 1):
+        cats = getattr(s, "resonance_categories", []) or []
+        rc = getattr(s, "resonance_count", 0)
+        resonance_str = f"{rc}[{'+'.join(cats)}]" if cats else "-"
+        risk_flags = getattr(s, "risk_flags", []) or []
+        risk_str = f"[red]⚠️ {len(risk_flags)}[/red]" if risk_flags else ""
         table.add_row(
-            str(i), s.code, f"{s.final_score:.2f}",
+            str(i), s.code, name_map.get(s.code, ""),
+            f"{s.final_score:.2f}",
             f"{s.tech_score:.2f}", f"{s.capital_score:.2f}", f"{s.fundamental_score:.2f}",
+            resonance_str,
             ",".join(s.hit_strategies),
+            risk_str,
         )
     console.print(table)
     console.print(
         f"命中数 [bold]{report_obj.hit_count}[/bold]；策略分布 {report_obj.strategy_hit_stats}"
     )
+    # v2：硬过滤汇总
+    hard_filtered = getattr(report_obj, "hard_filtered", []) or []
+    if hard_filtered:
+        by_reason: dict[str, int] = {}
+        for f in hard_filtered:
+            by_reason[f["reason"]] = by_reason.get(f["reason"], 0) + 1
+        detail = "、".join(f"{k}={v}" for k, v in sorted(by_reason.items()))
+        console.print(
+            f"[yellow]因风险硬过滤剔除[/yellow] [bold]{len(hard_filtered)}[/bold] 只 · {detail}"
+        )
 
 
 @app.command()

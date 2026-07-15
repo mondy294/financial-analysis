@@ -11,7 +11,8 @@
 | 5 | [05-data-layer.md](./05-data-layer.md) | 数据层：Provider / Repository / DataUpdate 编排 / DI 契约 | ✅ 已交付 |
 | 6 | [06-feature-quality.md](./06-feature-quality.md) | 手写指标 + 特征聚合 + 数据质量 + 板块过滤 | ✅ 已交付 |
 | 7 | [07-strategy-scoring-report.md](./07-strategy-scoring-report.md) | 策略 + 评分 + 日报（端到端产出 HTML） | ✅ 已交付 |
-| 8 | *待交付* | 回测 + 调度 | 🕐 未开始 |
+| 8 | [08-strategy-v2-layered-selection.md](./08-strategy-v2-layered-selection.md) | 策略 v2：分层门控 + 多策略共振 + regime 感知（v1.2 定稿） | 🚧 阶段 A 待落地 |
+| 9 | *待交付* | 回测 + 调度 | 🕐 未开始 |
 
 ## 用户核心约束（贯穿所有阶段）
 

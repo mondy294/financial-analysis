@@ -38,6 +38,10 @@ reports/*.html
 reports/backtest/
 !reports/.gitkeep
 
+# ============ 临时探测 & 日志 ============
+scripts/_*
+*.log
+
 # ============ 数据库 ============
 *.db
 *.db-journal

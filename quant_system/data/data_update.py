@@ -81,6 +81,30 @@ class BaseUpdater(ABC):
     def run(self, target_date: date, full: bool = False, **kwargs) -> UpdateStats: ...
 
     # 通用工具
+    def _get_name_map(self, codes: list[str]) -> dict[str, str]:
+        """一次 SQL 查回 code → name 映射，供进度条展示用。"""
+        if not codes:
+            return {}
+        try:
+            from sqlalchemy import select
+
+            from quant_system.database.models import StockBasic
+            session = self.repos.stock._session  # type: ignore[attr-defined]
+            rows = session.execute(
+                select(StockBasic.code, StockBasic.name).where(StockBasic.code.in_(codes))
+            ).all()
+            return {code: name for code, name in rows}
+        except Exception:
+            return {}
+
+    def _checkpoint(self) -> None:
+        """把当前 session 里累积的写入落盘（周期性调用，防中断丢失）。"""
+        try:
+            session = self.repos.stock._session  # type: ignore[attr-defined]
+            session.commit()
+        except Exception as e:
+            logger.warning("checkpoint commit 失败: {}", e)
+
     def _wrap_job(
         self, target_date: date, fn, **kwargs,
     ) -> UpdateStats:
@@ -225,60 +249,166 @@ class KlineUpdater(BaseUpdater):
             len(target_codes), target_date, "全量" if full else "增量",
         )
 
-        # 3. 逐股拉取
-        for i, code in enumerate(target_codes, 1):
-            try:
-                cursor = self.repos.sync_state.get_cursor(self.source_name, code)
-                if full or cursor is None:
-                    start = start_default
-                else:
-                    if cursor >= target_date:
-                        stats.skipped += 1
-                        continue
-                    try:
-                        start = tc.next_trading_day(cursor, 1)
-                    except ValueError:
-                        start = start_default
-                    if start > target_date:
-                        stats.skipped += 1
-                        continue
+        # 3. 预取股票名称映射 (一次 SQL，避免循环内查库)
+        name_map = self._get_name_map(target_codes)
 
-                if dry_run:
-                    logger.info("[dry-run] {} {} → {}", code, start, target_date)
-                    continue
+        # 4. 逐股拉取（带 rich 进度条：代码 + 名称 + 第 N/M 只 + 成功/跳过/失败）
+        from rich.progress import (
+            BarColumn,
+            Progress,
+            TextColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+        )
 
-                df = self.provider.fetch_daily_kline(
-                    code, start=start, end=target_date, force_refresh=full,
-                )
-                if df.empty:
-                    # 记录停牌可能
-                    self.repos.quality.add_check({
-                        "check_date": target_date,
-                        "check_type": "MISSING_KLINE",
-                        "severity": "WARN",
-                        "entity_type": "STOCK",
-                        "entity_key": code,
-                        "trade_date": target_date,
-                        "issue": f"{code} {start}~{target_date} 无 K 线数据",
-                        "detail": {"start": start.isoformat(), "end": target_date.isoformat()},
-                    })
-                    stats.skipped += 1
-                    self.repos.sync_state.set_cursor(self.source_name, code, target_date)
-                    continue
+        total = len(target_codes)
 
-                records = df.to_dict(orient="records")
-                stats.inserted += self.repos.kline.upsert_klines(records)
-                self.repos.sync_state.set_cursor(self.source_name, code, target_date)
+        def _fmt_cur(code: str) -> str:
+            return f"{code} {name_map.get(code, '')}".strip()
 
-                if i % 50 == 0:
-                    logger.info("kline 进度 {}/{}", i, len(target_codes))
+        progress = Progress(
+            TextColumn("[bold blue]kline[/]"),
+            BarColumn(bar_width=30),
+            TextColumn("[bold]{task.fields[idx]:>4}/{task.total}[/]"),
+            TextColumn("[cyan]{task.fields[cur]:<18}[/]"),
+            TextColumn(
+                "[green]✓{task.fields[ok]}[/] "
+                "[yellow]-{task.fields[sk]}[/] "
+                "[red]x{task.fields[err]}[/]"
+            ),
+            TimeElapsedColumn(),
+            TextColumn("<"),
+            TimeRemainingColumn(),
+            refresh_per_second=4,
+            transient=False,
+        )
 
-            except Exception as e:
-                stats.errors += 1
-                if len(stats.error_samples) < 5:
-                    stats.error_samples.append(f"{code}: {e}")
-                logger.warning("kline {} 失败: {}", code, e)
+        CHECKPOINT_EVERY = 20  # 每 N 只 commit 一次，防中断丢失进度
+        concurrency = max(1, self.settings.data.concurrency)
+
+        # ---- 步骤 A：预筛选（决定每只 code 的起始日 or 跳过）----
+        # 这一步只读 sync_state，不打网络，全部在主线程完成
+        tasks: list[tuple[str, date]] = []  # (code, start_date) 待拉列表
+        for code in target_codes:
+            cursor = self.repos.sync_state.get_cursor(self.source_name, code)
+            if full or cursor is None:
+                tasks.append((code, start_default))
                 continue
+            if cursor >= target_date:
+                stats.skipped += 1
+                continue
+            try:
+                start = tc.next_trading_day(cursor, 1)
+            except ValueError:
+                start = start_default
+            if start > target_date:
+                stats.skipped += 1
+                continue
+            tasks.append((code, start))
+
+        # dry-run 直接打印
+        if dry_run:
+            for code, start in tasks:
+                logger.info("[dry-run] {} {} → {}", code, start, target_date)
+            return
+
+        # ---- 步骤 B：线程池并发拉网络 → 主线程写库 ----
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _fetch(code: str, start: date):
+            """在 worker 线程里执行，只拉网络，不碰 session。"""
+            return code, start, self.provider.fetch_daily_kline(
+                code, start=start, end=target_date, force_refresh=full,
+            )
+
+        logger.info(
+            "kline 并发拉取: {} 只待处理（已跳过 {}），并发度 {}",
+            len(tasks), stats.skipped, concurrency,
+        )
+
+        i_done = stats.skipped  # 进度计数从已跳过的开始
+
+        with progress:
+            task = progress.add_task(
+                "pulling", total=total,
+                idx=i_done, cur="-", ok=0, sk=stats.skipped, err=0,
+            )
+            # 先把已跳过的计入
+            if stats.skipped > 0:
+                progress.update(task, advance=stats.skipped)
+
+            executor = ThreadPoolExecutor(
+                max_workers=concurrency, thread_name_prefix="kline-fetch"
+            )
+            futures = {executor.submit(_fetch, code, start): code
+                       for code, start in tasks}
+
+            try:
+                for fut in as_completed(futures):
+                    code = futures[fut]
+                    cur_label = _fmt_cur(code)
+                    i_done += 1
+                    try:
+                        code_res, start, df = fut.result()
+                        if df.empty:
+                            self.repos.quality.add_check({
+                                "check_date": target_date,
+                                "check_type": "MISSING_KLINE",
+                                "severity": "WARN",
+                                "entity_type": "STOCK",
+                                "entity_key": code_res,
+                                "trade_date": target_date,
+                                "issue": f"{code_res} {start}~{target_date} 无 K 线数据",
+                                "detail": {
+                                    "start": start.isoformat(),
+                                    "end": target_date.isoformat(),
+                                },
+                            })
+                            stats.skipped += 1
+                            self.repos.sync_state.set_cursor(
+                                self.source_name, code_res, target_date,
+                            )
+                            progress.update(
+                                task, advance=1, idx=i_done, cur=cur_label,
+                                sk=stats.skipped,
+                            )
+                        else:
+                            records = df.to_dict(orient="records")
+                            stats.inserted += self.repos.kline.upsert_klines(records)
+                            self.repos.sync_state.set_cursor(
+                                self.source_name, code_res, target_date,
+                            )
+                            ok_cnt = i_done - stats.skipped - stats.errors
+                            progress.update(
+                                task, advance=1, idx=i_done, cur=cur_label, ok=ok_cnt,
+                            )
+                    except Exception as e:
+                        stats.errors += 1
+                        if len(stats.error_samples) < 5:
+                            stats.error_samples.append(f"{code}: {e}")
+                        logger.warning("kline {} 失败: {}", code, e)
+                        progress.update(
+                            task, advance=1, idx=i_done, cur=cur_label,
+                            err=stats.errors,
+                        )
+
+                    # 周期性 checkpoint
+                    if i_done % CHECKPOINT_EVERY == 0:
+                        self._checkpoint()
+
+            except KeyboardInterrupt:
+                logger.warning("收到 Ctrl+C，取消未启动的任务，checkpoint 已完成部分")
+                # 取消还没跑的 futures（跑到一半的没法真的中断）
+                for fut in futures:
+                    fut.cancel()
+                self._checkpoint()
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+            finally:
+                executor.shutdown(wait=True)
+
+        # 循环结束再 checkpoint 一次
+        self._checkpoint()
 
         logger.info(
             "kline 完成: processed={} inserted={} skipped={} errors={}",
@@ -321,24 +451,110 @@ class FinancialUpdater(BaseUpdater):
         stats.processed = len(target_codes)
         quarters = self.settings.data.financial_lookback_quarters
 
-        for i, code in enumerate(target_codes, 1):
-            try:
-                df = self.provider.fetch_financial_snapshot(
-                    code, quarters=quarters, force_refresh=full,
-                )
-                if df.empty:
-                    stats.skipped += 1
-                    continue
-                stats.inserted += self.repos.financial.upsert_snapshots(df.to_dict(orient="records"))
-                self.repos.sync_state.set_cursor(self.source_name, code, target_date)
+        name_map = self._get_name_map(target_codes)
 
-                if i % 50 == 0:
-                    logger.info("financial 进度 {}/{}", i, len(target_codes))
-            except Exception as e:
-                stats.errors += 1
-                if len(stats.error_samples) < 5:
-                    stats.error_samples.append(f"{code}: {e}")
-                continue
+        from rich.progress import (
+            BarColumn,
+            Progress,
+            TextColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+        )
+
+        total = len(target_codes)
+
+        def _fmt_cur(code: str) -> str:
+            return f"{code} {name_map.get(code, '')}".strip()
+
+        progress = Progress(
+            TextColumn("[bold blue]financial[/]"),
+            BarColumn(bar_width=30),
+            TextColumn("[bold]{task.fields[idx]:>4}/{task.total}[/]"),
+            TextColumn("[cyan]{task.fields[cur]:<18}[/]"),
+            TextColumn(
+                "[green]✓{task.fields[ok]}[/] "
+                "[yellow]-{task.fields[sk]}[/] "
+                "[red]x{task.fields[err]}[/]"
+            ),
+            TimeElapsedColumn(),
+            TextColumn("<"),
+            TimeRemainingColumn(),
+            refresh_per_second=4,
+            transient=False,
+        )
+
+        CHECKPOINT_EVERY = 20
+        concurrency = max(1, self.settings.data.concurrency)
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _fetch(code: str):
+            return code, self.provider.fetch_financial_snapshot(
+                code, quarters=quarters, force_refresh=full,
+            )
+
+        logger.info(
+            "financial 并发拉取: {} 只，并发度 {}", total, concurrency,
+        )
+
+        i_done = 0
+
+        with progress:
+            task = progress.add_task(
+                "pulling", total=total,
+                idx=0, cur="-", ok=0, sk=0, err=0,
+            )
+            executor = ThreadPoolExecutor(
+                max_workers=concurrency, thread_name_prefix="fin-fetch"
+            )
+            futures = {executor.submit(_fetch, code): code for code in target_codes}
+
+            try:
+                for fut in as_completed(futures):
+                    code = futures[fut]
+                    cur_label = _fmt_cur(code)
+                    i_done += 1
+                    try:
+                        code_res, df = fut.result()
+                        if df.empty:
+                            stats.skipped += 1
+                            progress.update(
+                                task, advance=1, idx=i_done, cur=cur_label,
+                                sk=stats.skipped,
+                            )
+                        else:
+                            stats.inserted += self.repos.financial.upsert_snapshots(
+                                df.to_dict(orient="records")
+                            )
+                            self.repos.sync_state.set_cursor(
+                                self.source_name, code_res, target_date,
+                            )
+                            ok_cnt = i_done - stats.skipped - stats.errors
+                            progress.update(
+                                task, advance=1, idx=i_done, cur=cur_label, ok=ok_cnt,
+                            )
+                    except Exception as e:
+                        stats.errors += 1
+                        if len(stats.error_samples) < 5:
+                            stats.error_samples.append(f"{code}: {e}")
+                        progress.update(
+                            task, advance=1, idx=i_done, cur=cur_label, err=stats.errors,
+                        )
+
+                    if i_done % CHECKPOINT_EVERY == 0:
+                        self._checkpoint()
+
+            except KeyboardInterrupt:
+                logger.warning("收到 Ctrl+C，取消未启动的任务，checkpoint 已完成部分")
+                for fut in futures:
+                    fut.cancel()
+                self._checkpoint()
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+            finally:
+                executor.shutdown(wait=True)
+
+        self._checkpoint()
 
 
 # ============================================================================

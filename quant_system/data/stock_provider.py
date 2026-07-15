@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import functools
+import os
 import time
 from datetime import date, datetime
 from decimal import Decimal
@@ -23,6 +25,28 @@ from tenacity import (
 
 from quant_system.config.settings import get_settings
 from quant_system.infra.cache import CachePolicy, cached_call
+
+
+# ============================================================================
+# 屏蔽 akshare 内部 tqdm 输出（避免冲掉我们自己的 rich 进度条）
+# ============================================================================
+
+# tqdm 支持通过环境变量或猴子补丁禁用
+os.environ.setdefault("TQDM_DISABLE", "1")
+
+try:
+    import tqdm  # noqa: E402
+
+    _original_tqdm_init = tqdm.tqdm.__init__
+
+    @functools.wraps(_original_tqdm_init)
+    def _silent_tqdm_init(self, *args, **kwargs):
+        kwargs["disable"] = True
+        return _original_tqdm_init(self, *args, **kwargs)
+
+    tqdm.tqdm.__init__ = _silent_tqdm_init  # type: ignore[method-assign]
+except Exception:
+    pass
 
 
 # ============================================================================
@@ -61,18 +85,26 @@ class StockProvider(Protocol):
 # akshare 实现
 # ============================================================================
 
+import threading  # noqa: E402
+
 _last_call_at: float = 0.0
+_throttle_lock = threading.Lock()
 
 
 def _throttle() -> None:
-    """全局节流：两次 akshare 调用之间至少间隔 request_interval_ms。"""
+    """全局节流：两次 akshare 调用之间至少间隔 request_interval_ms（线程安全）。
+
+    在多线程并发下，这个函数保证跨所有线程的调用之间也遵守间隔，
+    避免多个线程同时打爆同一个 akshare 服务端。
+    """
     global _last_call_at
     interval = get_settings().data.akshare_request_interval_ms / 1000.0
-    now = time.time()
-    wait = interval - (now - _last_call_at)
-    if wait > 0:
-        time.sleep(wait)
-    _last_call_at = time.time()
+    with _throttle_lock:
+        now = time.time()
+        wait = interval - (now - _last_call_at)
+        if wait > 0:
+            time.sleep(wait)
+        _last_call_at = time.time()
 
 
 def _retry():
@@ -100,6 +132,12 @@ def _normalize_code(raw: str) -> str:
 def _to_pure_code(code: str) -> str:
     """把 `600000.SH` 转回 6 位纯代码给 akshare 用。"""
     return code.split(".")[0]
+
+
+def _to_tx_symbol(code: str) -> str:
+    """把 `600000.SH` 转成腾讯接口需要的 `sh600000` 格式。"""
+    pure, market = code.split(".")
+    return f"{market.lower()}{pure}"
 
 
 class AkshareStockProvider:
@@ -186,15 +224,21 @@ class AkshareStockProvider:
 
     @_retry()
     def _fetch_daily_kline_raw(self, code: str, start: date, end: date) -> pd.DataFrame:
+        """使用腾讯行情接口拉日线（东财 push2his 常被限流/封 IP）。
+
+        腾讯 stock_zh_a_hist_tx 支持 adjust='' / 'qfq' / 'hfq'，
+        返回列 [date, open, close, high, low, amount]（其中 amount 实际是"成交量/股"）。
+        换手率、涨跌幅腾讯不返回，本地计算/留空。
+        """
         import akshare as ak
 
-        pure = _to_pure_code(code)
+        tx_symbol = _to_tx_symbol(code)
         start_str = start.strftime("%Y%m%d")
         end_str = end.strftime("%Y%m%d")
 
         _throttle()
-        df_raw = ak.stock_zh_a_hist(
-            symbol=pure, period="daily",
+        df_raw = ak.stock_zh_a_hist_tx(
+            symbol=tx_symbol,
             start_date=start_str, end_date=end_str, adjust="",
         )
         if df_raw is None or df_raw.empty:
@@ -205,50 +249,61 @@ class AkshareStockProvider:
             ])
 
         _throttle()
-        df_hfq = ak.stock_zh_a_hist(
-            symbol=pure, period="daily",
+        df_hfq = ak.stock_zh_a_hist_tx(
+            symbol=tx_symbol,
             start_date=start_str, end_date=end_str, adjust="hfq",
         )
 
-        return self._transform_kline(code, df_raw, df_hfq)
+        return self._transform_kline_tx(code, df_raw, df_hfq)
 
     @staticmethod
-    def _transform_kline(code: str, df_raw: pd.DataFrame, df_hfq: pd.DataFrame) -> pd.DataFrame:
-        """把 akshare 两份 DataFrame 转成标准列。"""
-        col_map = {
-            "日期": "trade_date", "开盘": "open", "收盘": "close",
-            "最高": "high", "最低": "low", "成交量": "volume",
-            "成交额": "amount", "换手率": "turnover_rate", "涨跌幅": "pct_change",
-        }
-        df_raw = df_raw.rename(columns=col_map)
+    def _transform_kline_tx(code: str, df_raw: pd.DataFrame, df_hfq: pd.DataFrame) -> pd.DataFrame:
+        """把腾讯两份 DataFrame 转成标准列。
+
+        腾讯字段: date, open, close, high, low, amount（此处 amount 实为成交量，单位=股）
+        目标字段: code, trade_date, open, high, low, close, pre_close,
+                  volume, amount, turnover_rate, pct_change, adj_factor
+        """
+        df_raw = df_raw.rename(columns={"date": "trade_date"}).copy()
         df_raw["trade_date"] = pd.to_datetime(df_raw["trade_date"]).dt.date
 
-        # 通过 hfq 收盘 / raw 收盘 得到 adj_factor
-        adj_factor = None
+        # 通过 hfq 收盘 / raw 收盘 反推 adj_factor
         if df_hfq is not None and not df_hfq.empty:
-            df_hfq = df_hfq.rename(columns=col_map)
-            df_hfq["trade_date"] = pd.to_datetime(df_hfq["trade_date"]).dt.date
+            df_hfq2 = df_hfq.rename(columns={"date": "trade_date"}).copy()
+            df_hfq2["trade_date"] = pd.to_datetime(df_hfq2["trade_date"]).dt.date
             merged = df_raw[["trade_date", "close"]].merge(
-                df_hfq[["trade_date", "close"]],
+                df_hfq2[["trade_date", "close"]],
                 on="trade_date", suffixes=("_raw", "_hfq"),
             )
-            adj_factor = (merged["close_hfq"] / merged["close_raw"]).round(6)
+            merged["adj_factor"] = (merged["close_hfq"] / merged["close_raw"]).round(6)
             df_raw = df_raw.merge(
-                merged[["trade_date"]].assign(adj_factor=adj_factor),
-                on="trade_date", how="left",
+                merged[["trade_date", "adj_factor"]], on="trade_date", how="left",
             )
         else:
             df_raw["adj_factor"] = 1.0
 
+        # 腾讯的 amount 列实际存的是"成交量（股）"，我们把它映射到 volume；
+        # 真实成交额（元）腾讯不提供 → 用 volume × 均价 近似
+        df_raw["volume"] = pd.to_numeric(df_raw["amount"], errors="coerce")
+        df_raw["amount"] = (df_raw["volume"] * (df_raw["open"] + df_raw["close"]) / 2).round(2)
+
         df_raw["code"] = code
-        # pre_close 用前一日 close 递推
         df_raw = df_raw.sort_values("trade_date").reset_index(drop=True)
+
+        # pre_close = 前一日 close
         df_raw["pre_close"] = df_raw["close"].shift(1)
-        # 第一行 pre_close 用 close / (1 + pct_change/100) 反推
         first_idx = df_raw.index[0]
         if pd.isna(df_raw.at[first_idx, "pre_close"]):
-            pct = df_raw.at[first_idx, "pct_change"] or 0.0
-            df_raw.at[first_idx, "pre_close"] = float(df_raw.at[first_idx, "close"]) / (1 + pct / 100.0)
+            # 首行没前值，只能置成自己（回测/指标会 dropna 掉）
+            df_raw.at[first_idx, "pre_close"] = df_raw.at[first_idx, "close"]
+
+        # pct_change 本地计算
+        df_raw["pct_change"] = (
+            (df_raw["close"] - df_raw["pre_close"]) / df_raw["pre_close"] * 100
+        ).round(4)
+
+        # 换手率腾讯没有，留空（DB 字段允许 NULL；DQ 会记 WARN）
+        df_raw["turnover_rate"] = None
 
         cols = [
             "code", "trade_date", "open", "high", "low", "close", "pre_close",

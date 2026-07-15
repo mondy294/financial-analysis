@@ -22,7 +22,7 @@ dependencies = [
     "akshare>=1.15.0",
     "pandas>=2.2.0",
     "numpy>=1.26.0,<2.1.0",
-    "pandas-ta>=0.3.14b0",
+    # "pandas-ta>=0.3.14b0",  # 已从 PyPI 移除老版本；项目实际未 import pandas_ta，先注释掉
     "SQLAlchemy>=2.0.30",
     "APScheduler>=3.10.0",
     "pydantic>=2.7.0",
@@ -36,6 +36,7 @@ dependencies = [
     "diskcache>=5.6.0",
     "python-dotenv>=1.0.0",
     "alembic>=1.13.0",
+    "openai>=1.30.0",
 ]
 
 [project.optional-dependencies]

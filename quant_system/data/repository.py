@@ -112,20 +112,30 @@ class _BaseSQLARepo:
         self._session = session
 
     def _upsert_batch(self, table, records: list[dict], index_cols: list[str]) -> int:
-        """SQLite 方言 upsert。records 已经是纯 dict 列表。"""
+        """SQLite 方言 upsert。records 已经是纯 dict 列表。
+
+        SQLite 单条 SQL 的绑定变量上限：旧版 999，新版 32766。
+        为兼容全量场景（如全 A 股 5500+ 行 × 10 列 = 55000 参数），按块切分。
+        """
         if not records:
             return 0
         dialect = self._session.bind.dialect.name if self._session.bind else "sqlite"
         if dialect == "sqlite":
-            stmt = sqlite_insert(table).values(records)
-            update_cols = {c.name: stmt.excluded[c.name]
-                           for c in table.__table__.columns
-                           if c.name not in index_cols}
-            stmt = stmt.on_conflict_do_update(
-                index_elements=index_cols,
-                set_=update_cols,
-            )
-            self._session.execute(stmt)
+            # 单条 SQL 变量数 ≈ chunk_size × 列数；保守取上限 900，避免撞旧 SQLite 的 999 限制
+            n_cols = len(table.__table__.columns)
+            chunk_size = max(1, 900 // max(1, n_cols))
+            update_cols_names = [
+                c.name for c in table.__table__.columns if c.name not in index_cols
+            ]
+            for i in range(0, len(records), chunk_size):
+                chunk = records[i : i + chunk_size]
+                stmt = sqlite_insert(table).values(chunk)
+                update_cols = {name: stmt.excluded[name] for name in update_cols_names}
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=index_cols,
+                    set_=update_cols,
+                )
+                self._session.execute(stmt)
         else:
             # 通用 fallback（PG 走 on_conflict 需另实现，这里先简单 merge）
             for r in records:
