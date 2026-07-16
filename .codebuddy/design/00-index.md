@@ -12,7 +12,9 @@
 | 6 | [06-feature-quality.md](./06-feature-quality.md) | 手写指标 + 特征聚合 + 数据质量 + 板块过滤 | ✅ 已交付 |
 | 7 | [07-strategy-scoring-report.md](./07-strategy-scoring-report.md) | 策略 + 评分 + 日报（端到端产出 HTML） | ✅ 已交付 |
 | 8 | [08-strategy-v2-layered-selection.md](./08-strategy-v2-layered-selection.md) | 策略 v2：分层门控 + 多策略共振 + regime 感知（v1.2 定稿） | 🚧 阶段 A 待落地 |
-| 9 | *待交付* | 回测 + 调度 | 🕐 未开始 |
+| 9 | [09-stock-relationship-engine.md](./09-stock-relationship-engine.md) | Stock Relationship Layer：收益率 Pearson + 阈值落库 + Lead-Lag | 🚧 已部分落地 |
+| 10 | [10-abnormal-detector.md](./10-abnormal-detector.md) | Abnormal Pattern Engine：模式检测 → 模式内打分/排名（废止综合分） | 🚧 V2 P1 已落地 |
+| 11 | *待交付* | 回测 + 调度 | 🕐 未开始 |
 
 ## 用户核心约束（贯穿所有阶段）
 

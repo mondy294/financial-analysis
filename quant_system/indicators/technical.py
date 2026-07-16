@@ -140,11 +140,37 @@ def break_new_high(
 
     break_flag：当日收盘 > 昨日之前 N-1 日的最高（避免用「今日的高」比较「今日的最高」）
     """
-    # 用前 N 日（不含今日）的最高
     prior_high = high.shift(1).rolling(window=window - 1, min_periods=window - 1).max()
     high_n = high.rolling(window=window, min_periods=window).max()
     break_flag = (close > prior_high).fillna(False)
     return high_n, break_flag
+
+
+def prior_high(high: pd.Series, window: int) -> pd.Series:
+    """不含当日的近 window 日最高价（突破距离用）。"""
+    return high.shift(1).rolling(window=window, min_periods=window).max()
+
+
+def amplitude(high: pd.Series, low: pd.Series, window: int = 20) -> pd.Series:
+    """近 N 日振幅（%）：(max_high - min_low) / min_low * 100。"""
+    hh = high.rolling(window=window, min_periods=window).max()
+    ll = low.rolling(window=window, min_periods=window).min()
+    return (hh - ll) / ll.replace(0, np.nan) * 100
+
+
+def range_position(close: pd.Series, high: pd.Series, low: pd.Series, window: int = 250) -> pd.Series:
+    """区间百分位：(close - low_n) / (high_n - low_n)。"""
+    hh = high.rolling(window=window, min_periods=window).max()
+    ll = low.rolling(window=window, min_periods=window).min()
+    span = (hh - ll).replace(0, np.nan)
+    return (close - ll) / span
+
+
+def ma_cross_up(fast: pd.Series, slow: pd.Series) -> pd.Series:
+    """快线上穿慢线（当日）。"""
+    prev = fast.shift(1) <= slow.shift(1)
+    curr = fast > slow
+    return (prev & curr).fillna(False)
 
 
 # ============================================================================
@@ -246,9 +272,23 @@ def compute_all(
         if "turnover_rate" in out.columns else None
     )
 
-    # 突破
-    high_n, break_flag = break_new_high(close, high, breakout_window)
-    out[f"high_{breakout_window}d"] = high_n
-    out[f"break_high_{breakout_window}d"] = break_flag
+    # 突破（多窗口）+ 振幅 / 年线位置
+    for w in sorted({breakout_window, 20, 60, 120, 250}):
+        high_n, break_flag = break_new_high(close, high, w)
+        out[f"high_{w}d"] = high_n
+        out[f"break_high_{w}d"] = break_flag
+        ph = prior_high(high, w)
+        out[f"prior_high_{w}d"] = ph
+        atr_col = out.get(f"atr_{atr_window}")
+        if atr_col is not None:
+            out[f"break_distance_{w}d"] = (close - ph) / atr_col.replace(0, np.nan)
+
+    out["amplitude_20d"] = amplitude(high, low, 20)
+    out["low_250d"] = low.rolling(250, min_periods=250).min()
+    out["range_pos_250d"] = range_position(close, high, low, 250)
+    out["ma250"] = ma(close, 250)
+    out["ma250_bias"] = ma_position(close, out["ma250"])
+    if "ma5" in out.columns and "ma10" in out.columns:
+        out["ma5_cross_ma10"] = ma_cross_up(out["ma5"], out["ma10"])
 
     return out

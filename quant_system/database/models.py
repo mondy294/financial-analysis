@@ -146,6 +146,34 @@ class FinancialSnapshot(Base):
 
 
 # ============================================================================
+# 估值域（1 张）
+# ============================================================================
+
+class DailyValuation(Base):
+    """日频估值快照：PE/PB/PS/市值。市值单位=亿元。
+
+    与 financial_snapshot（季频报告期）分离：估值随行情每日变化，
+    走独立数据源（东财 stock_value_em / 百度兜底），按 (code, trade_date) 存储。
+    """
+    __tablename__ = "daily_valuation"
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    pe_ttm: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    pe_static: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    pb: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    ps_ttm: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    market_cap: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
+    float_market_cap: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_dval_date_code", "trade_date", "code"),
+        Index("ix_dval_date_pe", "trade_date", "pe_ttm"),
+        {"sqlite_with_rowid": False},
+    )
+
+
+# ============================================================================
 # 市场域（3 张）
 # ============================================================================
 
@@ -236,9 +264,27 @@ class DailyFeature(Base):
     turnover_change: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
     amount_ma5: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
 
-    # 突破
+    # 突破 / 位置（异动 Pattern Engine 用）
     high_20d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
     break_high_20d: Mapped[Optional[bool]] = mapped_column(Boolean)
+    high_60d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    break_high_60d: Mapped[Optional[bool]] = mapped_column(Boolean)
+    high_120d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    break_high_120d: Mapped[Optional[bool]] = mapped_column(Boolean)
+    high_250d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    low_250d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    break_high_250d: Mapped[Optional[bool]] = mapped_column(Boolean)
+    prior_high_20d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    prior_high_60d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    prior_high_250d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    break_distance_20d: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    break_distance_60d: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    break_distance_250d: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    amplitude_20d: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    range_pos_250d: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    ma250: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    ma250_bias: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    ma5_cross_ma10: Mapped[Optional[bool]] = mapped_column(Boolean)
 
     # 基本面快照 + 血缘
     pe_ttm: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
@@ -465,6 +511,115 @@ class DailyReportItem(Base):
 
 
 # ============================================================================
+# 关系域（2 张）
+# ============================================================================
+
+class StockRelationship(Base):
+    """股票关系长表：一行 = 一个 relation_type × window × 股票对 的关系。
+
+    - 对称方法（PEARSON 等）按 code_a < code_b 规范化，只存一行；
+    - 有向方法（LEAD_LAG）用 direction 字段承载方向，不破坏规范；
+    - 只保留最新快照（service 每次 replace）。
+    大表：自然复合主键 + WITHOUT ROWID（对齐 daily_kline/daily_feature 约定）。
+    """
+    __tablename__ = "stock_relationship"
+    relation_type: Mapped[str] = mapped_column(String(16), primary_key=True)
+    window: Mapped[str] = mapped_column(String(8), primary_key=True)
+    stock_code_a: Mapped[str] = mapped_column(String(16), primary_key=True)
+    stock_code_b: Mapped[str] = mapped_column(String(16), primary_key=True)
+    calc_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    relation_value: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    sample_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    direction: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
+    is_same_industry: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        # a 侧查询走复合主键前缀 (relation_type, window, stock_code_a)，无需额外索引
+        Index("ix_rel_b", "relation_type", "window", "stock_code_b"),      # 反向查「谁把我当邻居」
+        Index("ix_rel_value", "relation_type", "window", "relation_value"),  # 全局强/负相关扫描
+        {"sqlite_with_rowid": False},
+    )
+
+
+class StockRelationshipRun(Base):
+    """关系计算批次 / 血缘表。对齐 backtest_task，用于幂等、复现、监控。"""
+    __tablename__ = "stock_relationship_run"
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
+    calc_date: Mapped[date] = mapped_column(Date, nullable=False)
+    relation_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    windows: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
+    pool_code: Mapped[Optional[str]] = mapped_column(String(32))
+    board_filter: Mapped[Optional[str]] = mapped_column(String(32))
+    min_sample: Mapped[int] = mapped_column(Integer, nullable=False)
+    value_threshold: Mapped[Decimal] = mapped_column(Numeric(4, 3), nullable=False)
+    max_neighbors: Mapped[int] = mapped_column(Integer, nullable=False)
+    universe_size: Mapped[Optional[int]] = mapped_column(Integer)
+    pair_evaluated: Mapped[Optional[int]] = mapped_column(Integer)
+    pair_written: Mapped[Optional[int]] = mapped_column(Integer)
+    code_hash: Mapped[Optional[str]] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # RUNNING/SUCCESS/FAILED
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    error_msg: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_rel_run_asof", "calc_date", "relation_type"),
+        Index("ix_rel_run_status", "status"),
+    )
+
+
+# ============================================================================
+# 异动 Pattern Engine（2 张）
+# ============================================================================
+
+class AbnormalSignal(Base):
+    """异动模式命中：一行 = 某日某股某个 Pattern。"""
+    __tablename__ = "abnormal_signal"
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    pattern_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scan_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    pattern_score: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    pattern_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    global_rank: Mapped[Optional[int]] = mapped_column(Integer)
+    reasons: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
+    risk_flags: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
+    score_components: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    inputs_snapshot: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    params_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    feature_version: Mapped[Optional[str]] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_abn_pat_rank", "trade_date", "pattern_id", "pattern_rank"),
+        Index("ix_abn_pat_level", "trade_date", "pattern_id", "scan_level"),
+        {"sqlite_with_rowid": False},
+    )
+
+
+class AbnormalRun(Base):
+    """异动扫描批次 / 血缘。"""
+    __tablename__ = "abnormal_run"
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    patterns_enabled: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
+    params_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    universe_size: Mapped[Optional[int]] = mapped_column(Integer)
+    per_pattern_stats: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    written_count: Mapped[Optional[int]] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    error_msg: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_abn_run_date", "trade_date"),
+        Index("ix_abn_run_status", "status"),
+    )
+
+
+# ============================================================================
 # 系统域（3 张）
 # ============================================================================
 
@@ -525,6 +680,8 @@ ALL_MODELS = [
     DailyKline,
     # 财务
     FinancialSnapshot,
+    # 估值
+    DailyValuation,
     # 市场
     IndexDaily, MarketDaily, MarketFeatureDaily,
     # 特征
@@ -535,8 +692,12 @@ ALL_MODELS = [
     BacktestTask, BacktestResult,
     # 报告
     DailyReport, DailyReportItem,
+    # 关系
+    StockRelationship, StockRelationshipRun,
+    # 异动
+    AbnormalSignal, AbnormalRun,
     # 系统
     JobRunLog, DataSyncState, DataQualityCheck,
 ]
 
-assert len(ALL_MODELS) == 22, "表数量应为 22"
+assert len(ALL_MODELS) == 27, "表数量应为 27"

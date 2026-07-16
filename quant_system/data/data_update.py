@@ -411,9 +411,19 @@ class KlineUpdater(BaseUpdater):
                                 },
                             })
                             stats.skipped += 1
-                            self.repos.sync_state.set_cursor(
-                                self.source_name, code_res, target_date,
-                            )
+                            # 空结果不能把游标推进到 target_date：当日数据可能只是
+                            # 尚未发布（盘后行情源结算延迟），推进会让后续增量永久
+                            # 跳过该日、无法自愈（set_cursor 只前进不后退）。
+                            # 仅推进到 target_date 的前一交易日：既能跳过确认为空的
+                            # 历史区间，又保证下次运行仍会重试 target_date。
+                            try:
+                                safe_cursor = tc.previous_trading_day(target_date, 1)
+                            except ValueError:
+                                safe_cursor = None
+                            if safe_cursor is not None:
+                                self.repos.sync_state.set_cursor(
+                                    self.source_name, code_res, safe_cursor,
+                                )
                             progress.update(
                                 task, advance=1, idx=i_done, cur=cur_label,
                                 sk=stats.skipped,
@@ -611,6 +621,157 @@ class FinancialUpdater(BaseUpdater):
 
 
 # ============================================================================
+# 4b. ValuationUpdater（日频 PE/PB/市值）
+# ============================================================================
+
+class ValuationUpdater(BaseUpdater):
+    """日频估值更新：东财 stock_value_em 为主、百度兜底。
+
+    只保留每只股票最近 KEEP_DAYS 个交易日的估值行（as_of 回溯足够），
+    避免整张历史（2000+ 行/股）撑爆库。顺带把最新总市值回写 stock_basic。
+    """
+    source_name = "akshare.valuation"
+    KEEP_DAYS = 10
+
+    def __init__(
+        self, provider: FinancialProvider, repos: Repositories, settings: Settings | None = None,
+    ) -> None:
+        super().__init__(repos, settings)
+        self.provider = provider
+
+    def run(
+        self, target_date: date, full: bool = False,
+        pool: Optional[str] = None,
+        codes: Optional[list[str]] = None,
+        **kwargs,
+    ) -> UpdateStats:
+        return self._wrap_job(target_date, self._do, full=full, pool=pool, codes=codes)
+
+    def _do(
+        self, stats: UpdateStats, target_date: date, full: bool,
+        pool: Optional[str], codes: Optional[list[str]],
+    ) -> None:
+        if codes:
+            target_codes = codes
+        else:
+            pool_code = pool or self.settings.stock_pool.pool.value
+            pool_code_db = "CUSTOM_DEFAULT" if pool_code == "CUSTOM" else pool_code
+            target_codes = self.repos.stock.list_pool_members(pool_code_db)
+            target_codes = _filter_by_fetch_boards(target_codes, self.settings)
+            if not target_codes:
+                logger.warning("fetch_boards 过滤后无股票，请检查 QS_DATA__FETCH_BOARDS 配置")
+                return
+
+        stats.processed = len(target_codes)
+        name_map = self._get_name_map(target_codes)
+
+        from rich.progress import (
+            BarColumn,
+            Progress,
+            TextColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+        )
+
+        total = len(target_codes)
+
+        def _fmt_cur(code: str) -> str:
+            return f"{code} {name_map.get(code, '')}".strip()
+
+        progress = Progress(
+            TextColumn("[bold blue]valuation[/]"),
+            BarColumn(bar_width=30),
+            TextColumn("[bold]{task.fields[idx]:>4}/{task.total}[/]"),
+            TextColumn("[cyan]{task.fields[cur]:<18}[/]"),
+            TextColumn(
+                "[green]✓{task.fields[ok]}[/] "
+                "[yellow]-{task.fields[sk]}[/] "
+                "[red]x{task.fields[err]}[/]"
+            ),
+            TimeElapsedColumn(),
+            TextColumn("<"),
+            TimeRemainingColumn(),
+            refresh_per_second=4,
+            transient=False,
+        )
+
+        CHECKPOINT_EVERY = 20
+        concurrency = max(1, self.settings.data.concurrency)
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _fetch(code: str):
+            return code, self.provider.fetch_daily_valuation(code, force_refresh=full)
+
+        logger.info("valuation 并发拉取: {} 只，并发度 {}", total, concurrency)
+
+        i_done = 0
+        with progress:
+            task = progress.add_task(
+                "pulling", total=total, idx=0, cur="-", ok=0, sk=0, err=0,
+            )
+            executor = ThreadPoolExecutor(
+                max_workers=concurrency, thread_name_prefix="val-fetch"
+            )
+            futures = {executor.submit(_fetch, code): code for code in target_codes}
+
+            try:
+                for fut in as_completed(futures):
+                    code = futures[fut]
+                    cur_label = _fmt_cur(code)
+                    i_done += 1
+                    try:
+                        code_res, df = fut.result()
+                        if df is None or df.empty:
+                            stats.skipped += 1
+                            progress.update(
+                                task, advance=1, idx=i_done, cur=cur_label,
+                                sk=stats.skipped,
+                            )
+                        else:
+                            # 只留最近 KEEP_DAYS 行
+                            df = df.sort_values("trade_date").tail(self.KEEP_DAYS)
+                            records = df.to_dict(orient="records")
+                            stats.inserted += self.repos.valuation.upsert_valuations(records)
+                            # 顺带回写 stock_basic.market_cap（最新一行，单位=亿元）
+                            latest = records[-1]
+                            mcap = latest.get("market_cap")
+                            if mcap is not None and not pd.isna(mcap):
+                                self.repos.stock.update_market_cap(
+                                    code_res, Decimal(str(round(float(mcap), 4))),
+                                )
+                            self.repos.sync_state.set_cursor(
+                                self.source_name, code_res, target_date,
+                            )
+                            ok_cnt = i_done - stats.skipped - stats.errors
+                            progress.update(
+                                task, advance=1, idx=i_done, cur=cur_label, ok=ok_cnt,
+                            )
+                    except Exception as e:
+                        stats.errors += 1
+                        if len(stats.error_samples) < 5:
+                            stats.error_samples.append(f"{code}: {e}")
+                        progress.update(
+                            task, advance=1, idx=i_done, cur=cur_label, err=stats.errors,
+                        )
+
+                    if i_done % CHECKPOINT_EVERY == 0:
+                        self._checkpoint()
+
+            except KeyboardInterrupt:
+                logger.warning("收到 Ctrl+C，取消未启动的任务，checkpoint 已完成部分")
+                for fut in futures:
+                    fut.cancel()
+                self._checkpoint()
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+            finally:
+                executor.shutdown(wait=True)
+
+        self._checkpoint()
+
+
+# ============================================================================
 # 5. MarketUpdater（指数 + 情绪）
 # ============================================================================
 
@@ -704,6 +865,7 @@ class UpdateAllReport:
     stock_pool: UpdateStats
     kline: UpdateStats
     financial: UpdateStats
+    valuation: UpdateStats
     market: UpdateStats
 
     def summary_rows(self) -> list[tuple[str, int, int, int, int]]:
@@ -713,6 +875,7 @@ class UpdateAllReport:
             ("stock_pool", self.stock_pool),
             ("kline", self.kline),
             ("financial", self.financial),
+            ("valuation", self.valuation),
             ("market", self.market),
         ]:
             rows.append((name, s.processed, s.inserted, s.skipped, s.errors))
@@ -736,11 +899,12 @@ def run_update_all(
     pool = StockPoolUpdater(stock_provider, repos, settings).run(target_date, full=full)
     kline = KlineUpdater(stock_provider, repos, settings).run(target_date, full=full)
     fin = FinancialUpdater(financial_provider, repos, settings).run(target_date, full=full)
+    val = ValuationUpdater(financial_provider, repos, settings).run(target_date, full=full)
     market = MarketUpdater(index_provider, sentiment_provider, repos, settings).run(
         target_date, full=full, backfill=False,
     )
 
     return UpdateAllReport(
         stock_basic=basic, stock_pool=pool, kline=kline,
-        financial=fin, market=market,
+        financial=fin, valuation=val, market=market,
     )

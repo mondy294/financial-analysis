@@ -24,8 +24,8 @@ from quant_system.data.repository import Repositories
 from quant_system.indicators.technical import compute_all
 
 
-# 计算指标需要的最少 lookback 天数（60 日均线 + 缓冲）
-DEFAULT_LOOKBACK_DAYS = 120
+# 计算指标需要的最少 lookback 交易日（含 MA250 / 250 日突破；自然日再 ×2）
+DEFAULT_LOOKBACK_DAYS = 280
 
 
 def _to_decimal(x: Any) -> Decimal | None:
@@ -111,9 +111,20 @@ def build_feature_row(
             "financial_snapshot_date": None,
             "financial_ann_date": None,
         }
-    # 市值：优先用 stock_basic 冗余的 market_cap
-    stock = repos.stock.get_stock(code)
-    market_cap = _to_decimal(stock.market_cap) if stock is not None else None
+
+    # PE/PB/市值：优先用日频估值表（东财/百度日更），比季频财报快照更准更及时
+    valuation = repos.valuation.get_latest_valuation(code, as_of=trade_date)
+    if valuation is not None:
+        if valuation.pe_ttm is not None:
+            fin["pe_ttm"] = _to_decimal(valuation.pe_ttm)
+        if valuation.pb is not None:
+            fin["pb"] = _to_decimal(valuation.pb)
+
+    # 市值：日频估值表优先（单位=亿元），回退到 stock_basic 冗余值
+    market_cap = _to_decimal(valuation.market_cap) if valuation is not None else None
+    if market_cap is None:
+        stock = repos.stock.get_stock(code)
+        market_cap = _to_decimal(stock.market_cap) if stock is not None else None
 
     # 5. 组装 dict
     return {
@@ -151,9 +162,27 @@ def build_feature_row(
         "turnover_rate": _to_decimal(row.get("turnover_rate")),
         "turnover_change": _to_decimal(row.get("turnover_change")),
         "amount_ma5": _to_decimal(row.get("amount_ma5")),
-        # 突破
-        "high_20d": _to_decimal(row.get(f"high_{fcfg.breakout_window}d")),
-        "break_high_20d": _to_bool(row.get(f"break_high_{fcfg.breakout_window}d")),
+        # 突破 / 位置
+        "high_20d": _to_decimal(row.get("high_20d")),
+        "break_high_20d": _to_bool(row.get("break_high_20d")),
+        "high_60d": _to_decimal(row.get("high_60d")),
+        "break_high_60d": _to_bool(row.get("break_high_60d")),
+        "high_120d": _to_decimal(row.get("high_120d")),
+        "break_high_120d": _to_bool(row.get("break_high_120d")),
+        "high_250d": _to_decimal(row.get("high_250d")),
+        "low_250d": _to_decimal(row.get("low_250d")),
+        "break_high_250d": _to_bool(row.get("break_high_250d")),
+        "prior_high_20d": _to_decimal(row.get("prior_high_20d")),
+        "prior_high_60d": _to_decimal(row.get("prior_high_60d")),
+        "prior_high_250d": _to_decimal(row.get("prior_high_250d")),
+        "break_distance_20d": _to_decimal(row.get("break_distance_20d")),
+        "break_distance_60d": _to_decimal(row.get("break_distance_60d")),
+        "break_distance_250d": _to_decimal(row.get("break_distance_250d")),
+        "amplitude_20d": _to_decimal(row.get("amplitude_20d")),
+        "range_pos_250d": _to_decimal(row.get("range_pos_250d")),
+        "ma250": _to_decimal(row.get("ma250")),
+        "ma250_bias": _to_decimal(row.get("ma250_bias")),
+        "ma5_cross_ma10": _to_bool(row.get("ma5_cross_ma10")),
         # 基本面
         **fin,
         "market_cap": market_cap,

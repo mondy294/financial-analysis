@@ -128,12 +128,19 @@ class AkshareFinancialProvider:
 
     # -------------------- 日频估值 --------------------
 
+    # 日频估值输出列（表 daily_valuation 对齐；市值单位统一为「亿元」）
+    _VAL_COLS = [
+        "code", "trade_date", "pe_ttm", "pe_static", "pb",
+        "ps_ttm", "market_cap", "float_market_cap",
+    ]
+
     def fetch_daily_valuation(
         self, code: str, force_refresh: bool = False,
     ) -> pd.DataFrame:
-        """按日的 PE/PB/PS/市值。columns=[code, trade_date, pe_ttm, pb, ps_ttm, market_cap]
+        """按日 PE/PB/PS/市值。columns=_VAL_COLS，市值单位=亿元。
 
-        用 akshare 的乐咕数据。
+        数据源：东财 stock_value_em 为主（一次拿全历史），失败降级到百度
+        stock_zh_valuation_baidu（逐指标各拉一次，只取近一年）。
         """
         return cached_call(
             key_parts=("akshare.daily_val", code),
@@ -144,36 +151,62 @@ class AkshareFinancialProvider:
 
     @_retry()
     def _fetch_daily_val_raw(self, code: str) -> pd.DataFrame:
+        pure = _to_pure_code(code)
+        df = self._daily_val_from_em(code, pure)
+        if df is not None and not df.empty:
+            return df
+        # 东财失败/被封 → 百度兜底
+        return self._daily_val_from_baidu(code, pure)
+
+    def _daily_val_from_em(self, code: str, pure: str) -> pd.DataFrame:
+        """东财 stock_value_em：一次返回全历史（总市值单位=元，需 /1e8）。"""
         import akshare as ak
 
-        pure = _to_pure_code(code)
         _throttle()
-        try:
-            df = ak.stock_a_indicator_lg(symbol=pure)
-        except Exception as e:
-            logger.warning("daily_val 拉取失败 {}: {}", code, e)
+        df = ak.stock_value_em(symbol=pure)
+        if df is None or df.empty or "数据日期" not in df.columns:
             return pd.DataFrame()
 
-        if df is None or df.empty:
+        out = pd.DataFrame()
+        out["trade_date"] = pd.to_datetime(df["数据日期"], errors="coerce").dt.date
+        out["code"] = code
+        out["pe_ttm"] = pd.to_numeric(df.get("PE(TTM)"), errors="coerce")
+        out["pe_static"] = pd.to_numeric(df.get("PE(静)"), errors="coerce")
+        out["pb"] = pd.to_numeric(df.get("市净率"), errors="coerce")
+        out["ps_ttm"] = pd.to_numeric(df.get("市销率"), errors="coerce")
+        # 元 → 亿元
+        out["market_cap"] = pd.to_numeric(df.get("总市值"), errors="coerce") / 1e8
+        out["float_market_cap"] = pd.to_numeric(df.get("流通市值"), errors="coerce") / 1e8
+        out = out.dropna(subset=["trade_date"]).reset_index(drop=True)
+        return out[self._VAL_COLS]
+
+    def _daily_val_from_baidu(self, code: str, pure: str) -> pd.DataFrame:
+        """百度 stock_zh_valuation_baidu：逐指标各一次调用，市值单位本就是亿元。"""
+        import akshare as ak
+
+        ind_map = {"总市值": "market_cap", "市盈率(TTM)": "pe_ttm", "市净率": "pb"}
+        merged: pd.DataFrame | None = None
+        for ind, col in ind_map.items():
+            try:
+                _throttle()
+                d = ak.stock_zh_valuation_baidu(symbol=pure, indicator=ind, period="近一年")
+            except Exception as e:
+                logger.debug("baidu 估值 {} {} 失败: {}", code, ind, e)
+                continue
+            if d is None or d.empty or "date" not in d.columns:
+                continue
+            part = pd.DataFrame({
+                "trade_date": pd.to_datetime(d["date"], errors="coerce").dt.date,
+                col: pd.to_numeric(d["value"], errors="coerce"),
+            })
+            merged = part if merged is None else merged.merge(part, on="trade_date", how="outer")
+
+        if merged is None or merged.empty:
             return pd.DataFrame()
 
-        col_map = {
-            "trade_date": "trade_date",
-            "pe_ttm": "pe_ttm",
-            "pb": "pb",
-            "ps_ttm": "ps_ttm",
-            "total_mv": "market_cap",
-        }
-        df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
-        if "trade_date" not in df.columns:
-            return pd.DataFrame()
-
-        df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
-        df["code"] = code
-        for col in ["pe_ttm", "pb", "ps_ttm", "market_cap"]:
-            if col not in df.columns:
-                df[col] = None
-            else:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        return df[["code", "trade_date", "pe_ttm", "pb", "ps_ttm", "market_cap"]]
+        merged["code"] = code
+        for col in ["pe_ttm", "pe_static", "pb", "ps_ttm", "market_cap", "float_market_cap"]:
+            if col not in merged.columns:
+                merged[col] = None
+        merged = merged.dropna(subset=["trade_date"]).sort_values("trade_date").reset_index(drop=True)
+        return merged[self._VAL_COLS]

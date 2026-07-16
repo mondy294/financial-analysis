@@ -36,11 +36,15 @@ update_app = typer.Typer(help="数据更新（子命令）")
 pool_app = typer.Typer(help="股票池管理")
 signal_app = typer.Typer(help="策略信号查询")
 cache_app = typer.Typer(help="缓存管理")
+relationship_app = typer.Typer(help="股票关系层（相关度/联动）")
+abnormal_app = typer.Typer(help="异动 Pattern Engine（分模式检测）")
 
 app.add_typer(update_app, name="update")
 app.add_typer(pool_app, name="pool")
 app.add_typer(signal_app, name="signal")
 app.add_typer(cache_app, name="cache")
+app.add_typer(relationship_app, name="relationship")
+app.add_typer(abnormal_app, name="abnormal")
 
 console = Console()
 
@@ -85,7 +89,8 @@ def init_db_cmd(
     init_db(drop_first=drop_first)
     ok, missing = check_schema_integrity()
     if ok:
-        console.print("[green]✓ 数据库初始化完成，22 张表齐全[/green]")
+        from quant_system.database.models import ALL_MODELS
+        console.print(f"[green]✓ 数据库初始化完成，{len(ALL_MODELS)} 张表齐全[/green]")
     else:
         console.print(f"[red]✗ 缺失表: {missing}[/red]")
         raise typer.Exit(code=1)
@@ -127,7 +132,8 @@ def doctor() -> None:
 
     ok, missing = check_schema_integrity()
     if ok:
-        table.add_row("Schema 完整性", "✓", "22 张表齐全")
+        from quant_system.database.models import ALL_MODELS
+        table.add_row("Schema 完整性", "✓", f"{len(ALL_MODELS)} 张表齐全")
     else:
         table.add_row("Schema 完整性", "✗", f"缺失: {missing}")
 
@@ -258,6 +264,25 @@ def update_financial_cmd(
             d, full=full, pool=pool, codes=codes_list,
         ),
         f"update financial → {d}",
+    )
+
+
+@update_app.command("valuation")
+def update_valuation_cmd(
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+    full: Annotated[bool, typer.Option("--full")] = False,
+    pool: Annotated[Optional[str], typer.Option("--pool")] = None,
+    codes: Annotated[Optional[str], typer.Option("--codes")] = None,
+) -> None:
+    """更新日频估值 daily_valuation（PE/PB/市值，东财为主、百度兜底）。"""
+    d = _parse_date(trade_date)
+    from quant_system.data.data_update import ValuationUpdater
+    codes_list = _parse_codes(codes)
+    _run_updater(
+        lambda p, r: ValuationUpdater(p["financial"], r).run(
+            d, full=full, pool=pool, codes=codes_list,
+        ),
+        f"update valuation → {d}",
     )
 
 
@@ -716,6 +741,579 @@ def signal_stats_cmd(
 ) -> None:
     console.print("[yellow]TODO: 第 6 步之后实现[/yellow]")
     raise typer.Exit(code=2)
+
+
+# ============================================================================
+# relationship 子命令组
+# ============================================================================
+
+def _parse_windows_arg(raw: Optional[str]) -> list[str]:
+    """'60,250' 或 'W60,W250' → ['W60','W250']。None → 默认。"""
+    from quant_system.relationship.service import DEFAULT_WINDOWS
+    if not raw:
+        return list(DEFAULT_WINDOWS)
+    out: list[str] = []
+    for tok in raw.split(","):
+        t = tok.strip().upper()
+        if not t:
+            continue
+        out.append(t if t.startswith("W") else f"W{t}")
+    return out or list(DEFAULT_WINDOWS)
+
+
+@relationship_app.command("build")
+def relationship_build_cmd(
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+    relation_type: Annotated[str, typer.Option("--type")] = "pearson",
+    windows: Annotated[Optional[str], typer.Option("--windows", help="如 60,250")] = None,
+    pool: Annotated[Optional[str], typer.Option("--pool")] = None,
+    board_filter: Annotated[Optional[str], typer.Option("--board")] = None,
+    min_sample: Annotated[int, typer.Option("--min-sample")] = 120,
+    threshold: Annotated[float, typer.Option("--threshold")] = 0.3,
+    max_neighbors: Annotated[int, typer.Option("--max-neighbors")] = 200,
+    full_lookback: Annotated[int, typer.Option("--full-lookback")] = 750,
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    force: Annotated[bool, typer.Option("--force")] = False,
+    no_cache: Annotated[bool, typer.Option("--no-cache")] = False,
+) -> None:
+    """计算并落库股票关系（默认 Pearson，W60+W250 双窗口）。首次上线建议先 --dry-run。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+    from quant_system.relationship.service import build_relationships
+
+    _boot()
+    d = _parse_date(trade_date)
+    wins = _parse_windows_arg(windows)
+    mode = "[yellow]DRY-RUN[/yellow]" if dry_run else "[bold]BUILD[/bold]"
+    console.print(f"{mode} relationship → {d} type={relation_type} windows={wins}")
+
+    with session_scope() as session:
+        repos = build_repositories(session)
+        job_id = None if dry_run else repos.job_log.start_job("relationship.build", d)
+        try:
+            report = build_relationships(
+                repos, calc_date=d, relation_type=relation_type, windows=wins,
+                pool_code=pool, board_filter=board_filter, min_sample=min_sample,
+                value_threshold=threshold, max_neighbors=max_neighbors,
+                full_lookback=full_lookback, dry_run=dry_run, force=force,
+                use_cache=not no_cache,
+            )
+            if job_id is not None:
+                repos.job_log.finish_job(job_id, "SUCCESS", stats={
+                    "universe": report.universe_size,
+                    "written": report.pair_written_total,
+                    "skipped": report.skipped,
+                })
+        except Exception as e:
+            if job_id is not None:
+                repos.job_log.finish_job(job_id, "FAILED", error=str(e))
+            raise
+
+    if report.skipped:
+        console.print("[yellow]已存在 SUCCESS 快照，跳过（--force 强制重算）[/yellow]")
+        return
+    if report.universe_size < 2:
+        console.print("[red]计算宇宙不足，请先跑 update stock-pool + kline[/red]")
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"relationship {'dry-run' if dry_run else 'build'} · {d} · 宇宙 {report.universe_size} 只")
+    table.add_column("window")
+    table.add_column("有效股票", justify="right")
+    table.add_column("达标候选对", justify="right")
+    table.add_column("落库/预估", justify="right")
+    table.add_column("裁剪", justify="right")
+    table.add_column("|v|≥0.6 / ≥0.7 / ≥0.8", justify="right")
+    for w in report.per_window:
+        ge = w.hist.get("ge", {})
+        ge_str = f"{ge.get('0.6', 0)} / {ge.get('0.7', 0)} / {ge.get('0.8', 0)}"
+        table.add_row(
+            w.window, str(w.universe_effective), str(w.evaluated),
+            str(w.written), str(w.capped), ge_str,
+        )
+    console.print(table)
+    console.print(f"总写入 {report.pair_written_total} 行，耗时 {report.duration_ms}ms")
+    if dry_run:
+        console.print("[dim]dry-run 未落库；根据「|v|≥阈值」列微调 --threshold 后再正式 build[/dim]")
+
+
+@relationship_app.command("top")
+def relationship_top_cmd(
+    code: Annotated[str, typer.Argument()],
+    window: Annotated[str, typer.Option("--window")] = "W250",
+    relation_type: Annotated[str, typer.Option("--type")] = "pearson",
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+    neg: Annotated[bool, typer.Option("--neg", help="只看负相关")] = False,
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+) -> None:
+    """查某只股票的 Top 邻居。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+    from quant_system.relationship import queries
+
+    _boot()
+    as_of = _parse_date(trade_date) if trade_date else None
+    win = window.upper() if window.upper().startswith("W") else f"W{window}"
+    with session_scope() as session:
+        repos = build_repositories(session)
+        snapshot_date = repos.relation.latest_calc_date(relation_type.upper(), win)
+        rows = queries.top_neighbors(
+            repos, code, relation_type=relation_type.upper(), window=win,
+            sign=-1 if neg else None, limit=limit, as_of=as_of,
+        )
+
+    if not rows:
+        if snapshot_date is None:
+            console.print(f"[yellow]{win} 暂无关系快照，请先跑：qs relationship build --windows {win[1:]}[/yellow]")
+        elif neg:
+            console.print(
+                f"[yellow]{code} 在 {win} 无强负相关邻居"
+                f"（阈值下 A 股强负相关极少见，去掉 --neg 看正相关）[/yellow]"
+            )
+        else:
+            console.print(
+                f"[yellow]{code} 在 {win} 快照({snapshot_date})中无邻居"
+                f"（可能未在计算宇宙内，或相关度未达落库阈值）[/yellow]"
+            )
+        return
+    table = Table(title=f"{code} · {win} · Top {len(rows)} 邻居")
+    table.add_column("#", justify="right")
+    table.add_column("peer"); table.add_column("name")
+    table.add_column("corr", justify="right")
+    table.add_column("样本", justify="right")
+    table.add_column("同行业")
+    for i, r in enumerate(rows, 1):
+        table.add_row(
+            str(i), r["peer"], r.get("peer_name", ""),
+            f"{r['relation_value']:+.3f}", str(r["sample_size"]),
+            "✓" if r["is_same_industry"] else "",
+        )
+    console.print(table)
+
+
+@relationship_app.command("pair")
+def relationship_pair_cmd(
+    base: Annotated[str, typer.Argument()],
+    peer: Annotated[str, typer.Argument()],
+    window: Annotated[str, typer.Option("--window")] = "W250",
+    relation_type: Annotated[str, typer.Option("--type")] = "pearson",
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+) -> None:
+    """查两只股票的关系值。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+    from quant_system.relationship import queries
+
+    _boot()
+    as_of = _parse_date(trade_date) if trade_date else None
+    win = window.upper() if window.upper().startswith("W") else f"W{window}"
+    with session_scope() as session:
+        repos = build_repositories(session)
+        row = queries.get_pair(
+            repos, base, peer, relation_type=relation_type.upper(), window=win, as_of=as_of,
+        )
+    if row is None:
+        console.print(f"[yellow]{base} × {peer} 在 {win} 无关系数据（可能低于落库阈值）[/yellow]")
+        return
+    console.print(
+        f"[bold]{row['stock_code_a']} × {row['stock_code_b']}[/bold] · {win}\n"
+        f"  corr = [bold]{row['relation_value']:+.4f}[/bold]  样本={row['sample_size']}  "
+        f"同行业={'是' if row['is_same_industry'] else '否'}  快照日={row['calc_date']}"
+    )
+
+
+@relationship_app.command("changed")
+def relationship_changed_cmd(
+    short_window: Annotated[str, typer.Option("--short")] = "W60",
+    long_window: Annotated[str, typer.Option("--long")] = "W250",
+    min_delta: Annotated[float, typer.Option("--min-delta")] = 0.3,
+    limit: Annotated[int, typer.Option("--limit")] = 30,
+    relation_type: Annotated[str, typer.Option("--type")] = "pearson",
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+) -> None:
+    """联动增强榜：短窗 − 长窗 的相关度变化。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+    from quant_system.relationship import queries
+
+    _boot()
+    as_of = _parse_date(trade_date) if trade_date else None
+    with session_scope() as session:
+        repos = build_repositories(session)
+        rows = queries.changed(
+            repos, relation_type=relation_type.upper(),
+            short_window=short_window.upper(), long_window=long_window.upper(),
+            min_delta=min_delta, limit=limit, as_of=as_of,
+        )
+    if not rows:
+        console.print("[yellow]无联动增强数据（需 build 含短/长两个窗口）[/yellow]")
+        return
+    table = Table(title=f"联动增强 · {short_window}−{long_window} ≥ {min_delta}")
+    table.add_column("a"); table.add_column("name_a")
+    table.add_column("b"); table.add_column("name_b")
+    table.add_column("短", justify="right"); table.add_column("长", justify="right")
+    table.add_column("Δ", justify="right"); table.add_column("同行业")
+    for r in rows:
+        table.add_row(
+            r["stock_code_a"], r["name_a"], r["stock_code_b"], r["name_b"],
+            f"{r['v_short']:+.3f}", f"{r['v_long']:+.3f}", f"{r['delta']:+.3f}",
+            "✓" if r["is_same_industry"] else "",
+        )
+    console.print(table)
+
+
+@relationship_app.command("strong")
+def relationship_strong_cmd(
+    window: Annotated[str, typer.Option("--window")] = "W250",
+    sign: Annotated[int, typer.Option("--sign", help="+1 正相关 / -1 负相关")] = 1,
+    min_abs: Annotated[float, typer.Option("--min-abs")] = 0.8,
+    limit: Annotated[int, typer.Option("--limit")] = 30,
+    relation_type: Annotated[str, typer.Option("--type")] = "pearson",
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+) -> None:
+    """全局强相关榜（--sign -1 看强负相关）。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+    from quant_system.relationship import queries
+
+    _boot()
+    as_of = _parse_date(trade_date) if trade_date else None
+    win = window.upper() if window.upper().startswith("W") else f"W{window}"
+    with session_scope() as session:
+        repos = build_repositories(session)
+        rows = queries.strong(
+            repos, relation_type=relation_type.upper(), window=win,
+            sign=sign, min_abs=min_abs, limit=limit, as_of=as_of,
+        )
+    if not rows:
+        console.print(f"[yellow]{win} 无满足 |corr|≥{min_abs} 的数据[/yellow]")
+        return
+    label = "正相关" if sign > 0 else "负相关"
+    table = Table(title=f"强{label} · {win} · |corr|≥{min_abs}")
+    table.add_column("a"); table.add_column("name_a")
+    table.add_column("b"); table.add_column("name_b")
+    table.add_column("corr", justify="right"); table.add_column("样本", justify="right")
+    table.add_column("同行业")
+    for r in rows:
+        table.add_row(
+            r["stock_code_a"], r["name_a"], r["stock_code_b"], r["name_b"],
+            f"{r['relation_value']:+.3f}", str(r["sample_size"]),
+            "✓" if r["is_same_industry"] else "",
+        )
+    console.print(table)
+
+
+@relationship_app.command("leadlag")
+def relationship_leadlag_cmd(
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+    window: Annotated[str, typer.Option("--window")] = "W60",
+    candidate_min: Annotated[float, typer.Option("--candidate-min", help="候选对同期|corr|门槛")] = 0.5,
+    max_lag: Annotated[int, typer.Option("--max-lag")] = 5,
+    threshold: Annotated[float, typer.Option("--threshold", help="最优lag下相关度门槛")] = 0.6,
+    min_gain: Annotated[float, typer.Option("--min-gain", help="领先相关度需比同期高出")] = 0.03,
+    force: Annotated[bool, typer.Option("--force")] = False,
+    no_cache: Annotated[bool, typer.Option("--no-cache")] = False,
+) -> None:
+    """计算领先-滞后关系（候选对取自同期 PEARSON 快照，需先跑 build）。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+    from quant_system.relationship.service import build_lead_lag
+
+    _boot()
+    d = _parse_date(trade_date)
+    win = window.upper() if window.upper().startswith("W") else f"W{window}"
+    console.print(f"[bold]LEAD-LAG[/bold] → {d} window={win} max_lag=±{max_lag}")
+
+    with session_scope() as session:
+        repos = build_repositories(session)
+        job_id = repos.job_log.start_job("relationship.leadlag", d)
+        try:
+            report = build_lead_lag(
+                repos, calc_date=d, window=win, candidate_min_abs=candidate_min,
+                max_lag=max_lag, value_threshold=threshold, min_lead_gain=min_gain,
+                force=force, use_cache=not no_cache,
+            )
+            repos.job_log.finish_job(job_id, "SUCCESS", stats={
+                "candidates": report.per_window[0].evaluated if report.per_window else 0,
+                "written": report.pair_written_total, "skipped": report.skipped,
+            })
+        except Exception as e:
+            repos.job_log.finish_job(job_id, "FAILED", error=str(e))
+            raise
+
+    if report.skipped:
+        console.print("[yellow]已存在 LEAD_LAG 快照，跳过（--force 重算）[/yellow]")
+        return
+    if report.universe_size == 0:
+        console.print(f"[red]无候选对，请先跑：qs relationship build --windows {win[1:]}[/red]")
+        raise typer.Exit(code=1)
+    w = report.per_window[0]
+    console.print(
+        f"[green]✓[/green] 候选 {w.evaluated} 对 → 领先-滞后 {report.pair_written_total} 个"
+        f"（涉及 {report.universe_size} 只），耗时 {report.duration_ms}ms"
+    )
+    console.print("用 [cyan]qs relationship leads <代码>[/cyan] 查某只票的领先/跟随关系")
+
+
+@relationship_app.command("leads")
+def relationship_leads_cmd(
+    code: Annotated[str, typer.Argument()],
+    window: Annotated[str, typer.Option("--window")] = "W60",
+    role: Annotated[str, typer.Option("--role", help="leads=它领先谁 / follows=它跟随谁 / all")] = "all",
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+) -> None:
+    """查某只股票的领先-滞后关系（lag>0=它领先，lag<0=它跟随）。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+
+    _boot()
+    as_of = _parse_date(trade_date) if trade_date else None
+    win = window.upper() if window.upper().startswith("W") else f"W{window}"
+    with session_scope() as session:
+        repos = build_repositories(session)
+        snapshot = repos.relation.latest_calc_date("LEAD_LAG", win)
+        rows = repos.relation.lead_lag_of(
+            code, window=win, role=role, limit=limit, as_of=as_of,
+        )
+        names = {r["peer"]: (repos.stock.get_stock(r["peer"]).name
+                             if repos.stock.get_stock(r["peer"]) else "") for r in rows}
+
+    if not rows:
+        if snapshot is None:
+            console.print(f"[yellow]{win} 暂无 LEAD_LAG 快照，先跑：qs relationship leadlag --window {win[1:]}[/yellow]")
+        else:
+            console.print(f"[yellow]{code} 在 {win} 无领先/跟随关系[/yellow]")
+        return
+    table = Table(title=f"{code} · {win} · 领先-滞后（lag>0=它领先，lag<0=它跟随）")
+    table.add_column("peer"); table.add_column("name")
+    table.add_column("关系"); table.add_column("lag(交易日)", justify="right")
+    table.add_column("corr", justify="right"); table.add_column("样本", justify="right")
+    for r in rows:
+        lag = r["lag_days"]
+        rel = f"[green]领先[/green]" if lag > 0 else "[cyan]跟随[/cyan]"
+        table.add_row(
+            r["peer"], names.get(r["peer"], ""), rel, f"{abs(lag)}",
+            f"{r['corr']:+.3f}", str(r["sample_size"]),
+        )
+    console.print(table)
+
+
+@relationship_app.command("stats")
+def relationship_stats_cmd(
+    relation_type: Annotated[str, typer.Option("--type")] = "pearson",
+) -> None:
+    """当前快照概览：各窗口行数 / 平均样本 / 正负分布。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+
+    _boot()
+    with session_scope() as session:
+        repos = build_repositories(session)
+        stats = repos.relation.snapshot_stats(relation_type=relation_type.upper())
+
+    wins = stats.get("windows", [])
+    if not wins:
+        console.print("[yellow]暂无关系快照，先跑 relationship build[/yellow]")
+        return
+    table = Table(title=f"关系快照 · {stats['relation_type']}")
+    table.add_column("window")
+    table.add_column("行数", justify="right")
+    table.add_column("快照日")
+    table.add_column("平均样本", justify="right")
+    table.add_column("正", justify="right")
+    table.add_column("负", justify="right")
+    for w in wins:
+        table.add_row(
+            w["window"], str(w["rows"]), w["calc_date"] or "-",
+            str(w["avg_sample"]), str(w["positive"]), str(w["negative"]),
+        )
+    console.print(table)
+
+
+# ============================================================================
+# abnormal 子命令组（Pattern Engine）
+# ============================================================================
+
+@abnormal_app.command("scan")
+def abnormal_scan_cmd(
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+    patterns: Annotated[Optional[str], typer.Option("--patterns", help="逗号分隔 Pattern ID")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    force: Annotated[bool, typer.Option("--force")] = False,
+) -> None:
+    """跑异动 Pattern Engine（分模式扫描 + 模式内排名）。"""
+    from quant_system.abnormal.registry import PATTERN_REGISTRY
+    from quant_system.abnormal.service import build_abnormal
+    from quant_system.data.repository import build_repositories
+    from quant_system.database.migrations import ensure_schema_columns
+    from quant_system.infra.db import session_scope
+
+    _boot()
+    ensure_schema_columns()
+    d = _parse_date(trade_date)
+    pids = [x.strip().upper() for x in patterns.split(",")] if patterns else None
+    mode = "[yellow]DRY-RUN[/yellow]" if dry_run else "[bold]SCAN[/bold]"
+    console.print(f"{mode} abnormal → {d} patterns={pids or list(PATTERN_REGISTRY)}")
+
+    with session_scope() as session:
+        repos = build_repositories(session)
+        job_id = None if dry_run else repos.job_log.start_job("abnormal.scan", d)
+        try:
+            report = build_abnormal(
+                repos, trade_date=d, pattern_ids=pids, dry_run=dry_run, force=force,
+            )
+            if job_id is not None:
+                repos.job_log.finish_job(job_id, "SUCCESS", stats={
+                    "universe": report.universe_size,
+                    "written": sum(p.written for p in report.per_pattern),
+                    "skipped": report.skipped,
+                })
+        except Exception as e:
+            if job_id is not None:
+                repos.job_log.finish_job(job_id, "FAILED", error=str(e))
+            raise
+
+    if report.skipped:
+        console.print("[yellow]已存在 SUCCESS 批次，跳过（--force 重算）[/yellow]")
+        return
+    if report.universe_size == 0:
+        console.print("[red]无特征数据，请先 qs feature[/red]")
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"abnormal · {d} · 宇宙 {report.universe_size} · median={report.market_median_return}")
+    table.add_column("pattern")
+    table.add_column("L1/L2/L3", justify="right")
+    table.add_column("命中", justify="right")
+    table.add_column("Top1", justify="left")
+    for pr in report.per_pattern:
+        lv = "/".join(str(pr.level_stats.get(f"L{i}", 0)) for i in (1, 2, 3))
+        top1 = ""
+        if pr.hits:
+            h = pr.hits[0]
+            top1 = f"{h.code} L{h.scan_level} {h.pattern_score:.0f}"
+        table.add_row(pr.display_name, lv, str(len(pr.hits)), top1)
+    console.print(table)
+    console.print(f"耗时 {report.duration_ms}ms  params={report.params_version}")
+    if dry_run:
+        console.print("[dim]dry-run 未落库；正式跑去掉 --dry-run[/dim]")
+    else:
+        console.print("查看: [cyan]qs abnormal top --all[/cyan] / [cyan]qs abnormal show <代码>[/cyan]")
+
+
+@abnormal_app.command("top")
+def abnormal_top_cmd(
+    pattern: Annotated[Optional[str], typer.Option("--pattern", help="Pattern ID；与 --all 二选一")] = None,
+    all_patterns: Annotated[bool, typer.Option("--all", help="打印全部 Pattern 榜")] = False,
+    limit: Annotated[int, typer.Option("--limit")] = 10,
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+) -> None:
+    """查看某模式 TopN（或 --all 全部模式）。"""
+    from quant_system.abnormal.registry import PATTERN_REGISTRY
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+
+    _boot()
+    if not all_patterns and not pattern:
+        console.print("[yellow]请指定 --pattern RANGE_BREAKOUT 或 --all[/yellow]")
+        raise typer.Exit(code=1)
+
+    with session_scope() as session:
+        repos = build_repositories(session)
+        d = _parse_date(trade_date) if trade_date else repos.abnormal.latest_trade_date()
+        if d is None:
+            console.print("[yellow]暂无异动数据，先跑 qs abnormal scan[/yellow]")
+            return
+        pids = list(PATTERN_REGISTRY) if all_patterns else [pattern.strip().upper()]  # type: ignore[union-attr]
+        for pid in pids:
+            meta = PATTERN_REGISTRY.get(pid)
+            name = meta.display_name if meta else pid  # type: ignore[attr-defined]
+            rows = repos.abnormal.top_by_pattern(d, pid, limit=limit)
+            names = {}
+            for r in rows:
+                s = repos.stock.get_stock(r["code"])
+                names[r["code"]] = s.name if s else ""
+            table = Table(title=f"{name} · {d} · TOP{limit}")
+            table.add_column("#", justify="right")
+            table.add_column("code")
+            table.add_column("name")
+            table.add_column("L", justify="right")
+            table.add_column("score", justify="right")
+            table.add_column("reasons")
+            if not rows:
+                console.print(f"[dim]{name}: 今日无命中[/dim]")
+                continue
+            for r in rows:
+                table.add_row(
+                    str(r["pattern_rank"]), r["code"], names.get(r["code"], ""),
+                    str(r["scan_level"]), f"{r['pattern_score']:.1f}",
+                    " · ".join(r["reasons"][:4]),
+                )
+            console.print(table)
+
+
+@abnormal_app.command("show")
+def abnormal_show_cmd(
+    code: Annotated[str, typer.Argument()],
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+) -> None:
+    """查看某只股票命中了哪些 Pattern。"""
+    from quant_system.abnormal.registry import PATTERN_REGISTRY
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+
+    _boot()
+    with session_scope() as session:
+        repos = build_repositories(session)
+        d = _parse_date(trade_date) if trade_date else None
+        rows = repos.abnormal.hits_of(code, d)
+    if not rows:
+        console.print(f"[yellow]{code} 未命中任何 Pattern[/yellow]")
+        return
+    table = Table(title=f"{code} · 异动命中")
+    table.add_column("pattern")
+    table.add_column("L")
+    table.add_column("rank", justify="right")
+    table.add_column("score", justify="right")
+    table.add_column("reasons")
+    for r in rows:
+        meta = PATTERN_REGISTRY.get(r["pattern_id"])
+        name = meta.display_name if meta else r["pattern_id"]  # type: ignore[attr-defined]
+        table.add_row(
+            name, str(r["scan_level"]), str(r["pattern_rank"]),
+            f"{r['pattern_score']:.1f}", " · ".join(r["reasons"][:5]),
+        )
+    console.print(table)
+
+
+@abnormal_app.command("stats")
+def abnormal_stats_cmd(
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+) -> None:
+    """各 Pattern × Scan Level 命中漏斗。"""
+    from quant_system.abnormal.registry import PATTERN_REGISTRY
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+
+    _boot()
+    with session_scope() as session:
+        repos = build_repositories(session)
+        d = _parse_date(trade_date) if trade_date else repos.abnormal.latest_trade_date()
+        if d is None:
+            console.print("[yellow]暂无数据[/yellow]")
+            return
+        stats = repos.abnormal.stats(d)
+    table = Table(title=f"abnormal stats · {d}")
+    table.add_column("pattern")
+    table.add_column("L1", justify="right")
+    table.add_column("L2", justify="right")
+    table.add_column("L3", justify="right")
+    for pid, meta in PATTERN_REGISTRY.items():
+        s = stats.get(pid, {})
+        table.add_row(
+            meta.display_name,  # type: ignore[attr-defined]
+            str(s.get("L1", 0)), str(s.get("L2", 0)), str(s.get("L3", 0)),
+        )
+    console.print(table)
 
 
 if __name__ == "__main__":

@@ -120,19 +120,66 @@ def seed_initial_data(session: Session) -> None:
     logger.info("种子数据写入完成")
 
 
+def ensure_schema_columns(engine: Engine | None = None) -> list[str]:
+    """为已有 SQLite 表补齐新增列（create_all 不会 ALTER）。返回本次新增列描述。"""
+    from sqlalchemy import text
+
+    from quant_system.infra.db import get_engine
+
+    engine = engine or get_engine()
+    inspector = inspect(engine)
+    added: list[str] = []
+
+    # daily_feature 扩展列（异动 Pattern Engine）
+    feat_cols = {
+        "high_60d": "NUMERIC(12,4)",
+        "break_high_60d": "BOOLEAN",
+        "high_120d": "NUMERIC(12,4)",
+        "break_high_120d": "BOOLEAN",
+        "high_250d": "NUMERIC(12,4)",
+        "low_250d": "NUMERIC(12,4)",
+        "break_high_250d": "BOOLEAN",
+        "prior_high_20d": "NUMERIC(12,4)",
+        "prior_high_60d": "NUMERIC(12,4)",
+        "prior_high_250d": "NUMERIC(12,4)",
+        "break_distance_20d": "NUMERIC(10,4)",
+        "break_distance_60d": "NUMERIC(10,4)",
+        "break_distance_250d": "NUMERIC(10,4)",
+        "amplitude_20d": "NUMERIC(10,4)",
+        "range_pos_250d": "NUMERIC(10,4)",
+        "ma250": "NUMERIC(12,4)",
+        "ma250_bias": "NUMERIC(10,4)",
+        "ma5_cross_ma10": "BOOLEAN",
+    }
+    if "daily_feature" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("daily_feature")}
+        with engine.begin() as conn:
+            for name, typ in feat_cols.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE daily_feature ADD COLUMN {name} {typ}"))
+                    added.append(f"daily_feature.{name}")
+
+    # 新表仍靠 create_all
+    Base.metadata.create_all(engine)
+    if added:
+        logger.info("schema 补列: {}", ", ".join(added))
+    return added
+
+
 def init_db(drop_first: bool = False) -> None:
     """建表 + 写种子数据。CLI init-db 的主体。"""
     from quant_system.infra.db import get_engine, session_scope
 
     engine = get_engine()
     create_all_tables(engine, drop_first=drop_first)
+    ensure_schema_columns(engine)
     with session_scope() as session:
         seed_initial_data(session)
     logger.info("数据库初始化完成: {}", engine.url)
 
 
 def check_schema_integrity() -> tuple[bool, list[str]]:
-    """检查 22 张表是否齐全。返回 (ok, missing_tables)。"""
+    """检查 ALL_MODELS 声明的所有表是否齐全。返回 (ok, missing_tables)。"""
     from quant_system.infra.db import get_engine
 
     engine = get_engine()
