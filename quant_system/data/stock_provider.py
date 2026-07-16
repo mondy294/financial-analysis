@@ -172,7 +172,7 @@ class AkshareStockProvider:
     def fetch_stock_basic(self, force_refresh: bool = False) -> pd.DataFrame:
         """全量拉取股票基础信息（每日更新一次）。"""
         return cached_call(
-            key_parts=("akshare.stock_basic", "spot_em"),
+            key_parts=("akshare.stock_basic", "multi_source"),
             fn=self._fetch_stock_basic_raw,
             policy=CachePolicy.recent(),  # 每日更新，1 小时缓存即可
             force_refresh=force_refresh,
@@ -180,38 +180,22 @@ class AkshareStockProvider:
 
     @_retry()
     def _fetch_stock_basic_raw(self) -> pd.DataFrame:
-        import akshare as ak
-
-        _throttle()
-        # 主表：全 A 股 code + name（稳定接口）
-        df_name = ak.stock_info_a_code_name()
-        if df_name is None or df_name.empty:
-            raise RuntimeError("akshare stock_info_a_code_name 返回空")
+        # 多源容错：东财 → 新浪 → 交易所直连，第一个成功的即采用。
+        # 单一源易受 IP 封禁 / 服务端 TLS 故障影响（如深交所 www.szse.cn 握手失败），
+        # 故按可靠性降级尝试。
+        df, source = self._fetch_name_list_with_fallback()
 
         result = pd.DataFrame()
-        result["code"] = df_name["code"].astype(str).apply(_normalize_code)
-        result["name"] = df_name["name"].astype(str)
+        result["code"] = df["code"].values
+        result["name"] = df["name"].values
         result["exchange"] = result["code"].str.split(".").str[1]
-        result["is_st"] = df_name["name"].str.contains("ST", na=False)
+        result["is_st"] = df["is_st"].values
 
-        # 副表：市值/换手率快照（可选，失败不影响主表）
-        try:
-            _throttle()
-            df_spot = ak.stock_zh_a_spot_em()
-            if df_spot is not None and not df_spot.empty:
-                spot_map: dict[str, dict] = {}
-                for _, row in df_spot.iterrows():
-                    code = _normalize_code(str(row.get("代码", "")))
-                    spot_map[code] = {
-                        "market_cap": pd.to_numeric(row.get("总市值"), errors="coerce"),
-                        "turnover_rate": pd.to_numeric(row.get("换手率"), errors="coerce"),
-                    }
-                result["market_cap"] = result["code"].map(lambda c: spot_map.get(c, {}).get("market_cap"))
-            else:
-                result["market_cap"] = None
-        except Exception as e:
-            logger.warning("stock_zh_a_spot_em 失败，市值字段留空: {}", e)
-            result["market_cap"] = None
+        # 市值：东财源自带；其余源单独向东财补，失败留空（不阻塞主表）
+        if "market_cap" in df.columns:
+            result["market_cap"] = df["market_cap"].values
+        else:
+            result["market_cap"] = self._enrich_market_cap(result["code"])
 
         # 以下字段暂留空，后续可 individual_info 补
         result["industry_name"] = None
@@ -219,8 +203,125 @@ class AkshareStockProvider:
         result["total_share"] = None
         result["float_share"] = None
 
-        logger.info("拉取 stock_basic: {} 只", len(result))
+        logger.info("拉取 stock_basic: {} 只（来源: {}）", len(result), source)
         return result
+
+    # -------------------- stock_basic 多源实现 --------------------
+
+    def _fetch_name_list_with_fallback(self) -> tuple[pd.DataFrame, str]:
+        """按可靠性依次尝试各数据源，返回 (标准化名单 df, 来源标签)。
+
+        每个源产出至少 [code, name, is_st]，东财额外带 market_cap。
+        全部失败才抛异常。
+        """
+        sources = [
+            ("东财 spot", self._name_list_from_em),
+            ("新浪 spot", self._name_list_from_sina),
+            ("交易所直连", self._name_list_from_exchange),
+        ]
+        errors: list[str] = []
+        for label, fn in sources:
+            try:
+                df = fn()
+                if df is not None and not df.empty:
+                    return df, label
+                errors.append(f"{label}: 返回空")
+            except Exception as e:
+                errors.append(f"{label}: {type(e).__name__} {str(e)[:80]}")
+                logger.warning("stock_basic 源[{}]不可用，尝试下一个: {}", label, e)
+        raise RuntimeError("所有 stock_basic 数据源均失败 → " + " | ".join(errors))
+
+    def _name_list_from_em(self) -> pd.DataFrame:
+        """东财实时快照：一次拿到 代码 + 名称 + 总市值（最优）。"""
+        import akshare as ak
+
+        _throttle()
+        df = ak.stock_zh_a_spot_em()
+        if df is None or df.empty:
+            raise RuntimeError("stock_zh_a_spot_em 返回空")
+        out = pd.DataFrame()
+        out["code"] = df["代码"].astype(str).apply(_normalize_code)
+        out["name"] = df["名称"].astype(str)
+        out["is_st"] = out["name"].str.contains("ST", na=False)
+        out["market_cap"] = pd.to_numeric(df["总市值"], errors="coerce")
+        return out
+
+    def _name_list_from_sina(self) -> pd.DataFrame:
+        """新浪实时快照：全 A 股 代码 + 名称（无市值）。代码带 sh/sz/bj 前缀。"""
+        import akshare as ak
+
+        _throttle()
+        df = ak.stock_zh_a_spot()
+        if df is None or df.empty:
+            raise RuntimeError("stock_zh_a_spot 返回空")
+        out = pd.DataFrame()
+        # 代码形如 sh600000 / sz000001 / bj920000 → 去掉 2 位前缀再标准化
+        out["code"] = df["代码"].astype(str).str[2:].apply(_normalize_code)
+        out["name"] = df["名称"].astype(str)
+        out["is_st"] = out["name"].str.contains("ST", na=False)
+        return out
+
+    def _name_list_from_exchange(self) -> pd.DataFrame:
+        """交易所直连兜底：沪市（主板+科创板，必成）+ 深市（尽力，失败仅告警）。"""
+        import akshare as ak
+
+        frames: list[pd.DataFrame] = []
+
+        # 沪市：主板 + 科创板
+        sh_parts: list[pd.DataFrame] = []
+        for sym in ("主板A股", "科创板"):
+            _throttle()
+            d = ak.stock_info_sh_name_code(symbol=sym)
+            if d is not None and not d.empty:
+                o = pd.DataFrame()
+                o["code"] = d["证券代码"].astype(str).apply(_normalize_code)
+                o["name"] = d["证券简称"].astype(str)
+                sh_parts.append(o)
+        if not sh_parts:
+            raise RuntimeError("上交所名单获取失败")
+        frames.extend(sh_parts)
+
+        # 深市：尽力而为，失败不阻塞（www.szse.cn 常有 TLS 故障）
+        try:
+            _throttle()
+            d = ak.stock_info_sz_name_code(symbol="A股列表")
+            if d is not None and not d.empty:
+                code_col = "A股代码" if "A股代码" in d.columns else d.columns[0]
+                name_col = "A股简称" if "A股简称" in d.columns else d.columns[1]
+                o = pd.DataFrame()
+                o["code"] = d[code_col].astype(str).apply(_normalize_code)
+                o["name"] = d[name_col].astype(str)
+                frames.append(o)
+            else:
+                logger.warning("深交所名单返回空，深市股票将缺失")
+        except Exception as e:
+            logger.warning("深交所名单获取失败，深市股票将缺失: {}", e)
+
+        out = pd.concat(frames, ignore_index=True)
+        out = out.drop_duplicates(subset="code").reset_index(drop=True)
+        out["is_st"] = out["name"].str.contains("ST", na=False)
+        return out
+
+    def _enrich_market_cap(self, codes: pd.Series) -> pd.Series:
+        """非东财源时，单独向东财 spot 补市值；失败则整列留空。"""
+        import akshare as ak
+
+        empty = pd.Series([None] * len(codes), index=codes.index, dtype="object")
+        try:
+            _throttle()
+            df_spot = ak.stock_zh_a_spot_em()
+            if df_spot is None or df_spot.empty:
+                return empty
+            cap_map = {
+                _normalize_code(str(row.get("代码", ""))): pd.to_numeric(
+                    row.get("总市值"), errors="coerce"
+                )
+                for _, row in df_spot.iterrows()
+            }
+            return codes.map(lambda c: cap_map.get(c))
+        except Exception as e:
+            logger.warning("市值补充失败（东财 spot 不可用），market_cap 留空: {}", e)
+            return empty
 
     # -------------------- K 线 --------------------
 

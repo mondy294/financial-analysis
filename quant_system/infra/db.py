@@ -31,6 +31,7 @@ def _configure_sqlite_pragmas(engine: Engine) -> None:
     def _on_connect(dbapi_conn, _):  # noqa: ANN001
         cursor = dbapi_conn.cursor()
         try:
+            cursor.execute(f"PRAGMA busy_timeout = {cfg.sqlite_busy_timeout_ms}")
             cursor.execute(f"PRAGMA journal_mode = {cfg.sqlite_journal_mode}")
             cursor.execute(f"PRAGMA synchronous = {cfg.sqlite_synchronous}")
             cursor.execute(f"PRAGMA cache_size = -{cfg.sqlite_cache_size_kb}")
@@ -66,6 +67,8 @@ def get_engine() -> Engine:
     engine_kwargs: dict = {"echo": cfg.echo_sql, "future": True}
     if cfg.url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
+        # pysqlite 的忙等超时（秒）：抢不到锁时等待而非立刻抛 "database is locked"
+        connect_args["timeout"] = cfg.sqlite_busy_timeout_ms / 1000.0
         engine_kwargs["connect_args"] = connect_args
     else:
         engine_kwargs["pool_size"] = cfg.pool_size

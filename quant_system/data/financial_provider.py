@@ -70,8 +70,11 @@ class AkshareFinancialProvider:
             # 按报告期的关键指标
             df = ak.stock_financial_abstract_ths(symbol=pure, indicator="按报告期")
         except Exception as e:
-            logger.warning("财务数据拉取失败 {}: {}", code, e)
-            return pd.DataFrame()
+            # 同花顺限流时页面解析失败（如 'NoneType' object has no attribute 'string'）。
+            # 抛出让 @_retry 退避重试（退避后 THS 冷却下来往往能成功）；
+            # 重试用尽仍失败才由上层 data_update 记为 error。空结果也不会被缓存。
+            logger.debug("财务数据拉取失败（将重试） {}: {}", code, e)
+            raise
 
         if df is None or df.empty:
             return pd.DataFrame()

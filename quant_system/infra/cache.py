@@ -172,9 +172,21 @@ def cached_call(
 
     logger.trace("cache MISS: {} key={}", key_parts[0] if key_parts else "?", key[:8])
     result = fn()
-    if result is not None:
+    # 不缓存空结果：空 DataFrame / 空容器通常意味着拉取失败或被限流，缓存下来会
+    # 导致后续重试也命中空值（财报被同花顺限流时尤其致命），故只缓存有内容的结果。
+    if result is not None and not _is_empty_result(result):
         backend.set(key, result, ttl=policy.ttl)
     return result
+
+
+def _is_empty_result(result: Any) -> bool:
+    """判断拉取结果是否为空（不缓存）。用鸭子类型避免强依赖 pandas。"""
+    empty_attr = getattr(result, "empty", None)
+    if empty_attr is not None:  # pandas DataFrame / Series
+        return bool(empty_attr)
+    if isinstance(result, (list, tuple, dict, set, str)):
+        return len(result) == 0
+    return False
 
 
 # ============================================================================
