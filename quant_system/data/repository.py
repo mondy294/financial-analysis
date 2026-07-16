@@ -116,9 +116,26 @@ class _BaseSQLARepo:
 
         SQLite 单条 SQL 的绑定变量上限：旧版 999，新版 32766。
         为兼容全量场景（如全 A 股 5500+ 行 × 10 列 = 55000 参数），按块切分。
+
+        **字段集对齐**：为了让 SQLAlchemy 能编译出统一的 INSERT，
+        所有 record 必须有相同的键集。这里做防御性对齐：以第一条 record
+        的键集为准，缺失的键补 None。避免上游忘记补 None 时批量 insert 挂掉。
         """
         if not records:
             return 0
+
+        # 字段集对齐：以第一条 record 的键集为主，缺失字段填 None
+        canonical_keys = list(records[0].keys())
+        canonical_set = set(canonical_keys)
+        aligned: list[dict] = []
+        for r in records:
+            if set(r.keys()) == canonical_set:
+                aligned.append(r)
+            else:
+                # 保持第一条的键顺序，缺的补 None，多的忽略（防止把非表列传进去）
+                aligned.append({k: r.get(k) for k in canonical_keys})
+        records = aligned
+
         dialect = self._session.bind.dialect.name if self._session.bind else "sqlite"
         if dialect == "sqlite":
             # 单条 SQL 变量数 ≈ chunk_size × 列数；保守取上限 900，避免撞旧 SQLite 的 999 限制

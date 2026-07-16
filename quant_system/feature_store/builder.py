@@ -88,9 +88,8 @@ def build_feature_row(
     # 3. 取目标日行
     row = df[df["trade_date"] == trade_date].iloc[0]
 
-    # 4. 拼基本面（含血缘）
+    # 4. 拼基本面（含血缘）—— **务必保证字段集恒定**（批量 upsert 要求所有 dict 键一致）
     snapshot = repos.financial.get_latest_snapshot(code, as_of=trade_date)
-    fin: dict = {}
     if snapshot is not None:
         fin = {
             "pe_ttm": _to_decimal(snapshot.pe_ttm),
@@ -100,6 +99,17 @@ def build_feature_row(
             "revenue_yoy_latest": _to_decimal(snapshot.revenue_yoy),
             "financial_snapshot_date": snapshot.report_period,
             "financial_ann_date": snapshot.ann_date,
+        }
+    else:
+        # 没财报时也要产出这 7 个字段（值为 None），避免批量 insert 字段集不一致
+        fin = {
+            "pe_ttm": None,
+            "pb": None,
+            "roe_latest": None,
+            "net_profit_yoy_latest": None,
+            "revenue_yoy_latest": None,
+            "financial_snapshot_date": None,
+            "financial_ann_date": None,
         }
     # 市值：优先用 stock_basic 冗余的 market_cap
     stock = repos.stock.get_stock(code)

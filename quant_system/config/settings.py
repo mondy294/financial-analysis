@@ -66,10 +66,20 @@ class DataConfig(BaseModel):
     cache_ttl_seconds: int = 86400               # 磁盘缓存 TTL
     akshare_retry_times: int = 3
     akshare_retry_backoff: float = 2.0
-    akshare_request_interval_ms: int = 200       # 限流：两次请求最小间隔（全局，跨线程）
+    akshare_request_interval_ms: int = 200       # 单次调用间隔下限（毫秒）
+    # 节流模式：
+    #   True  = 全局节流（跨线程共享计时，QPS 上限 = 1000/interval_ms，并发无收益）
+    #   False = 每线程节流（每 worker 独立计时，QPS 上限 = concurrency × 1000/interval_ms）
+    # 默认 False（腾讯数据源较稳定，追求真并发）；数据源不稳时改回 True 保守
+    throttle_global: bool = False
     concurrency: int = 4                          # kline/financial 拉取的并发线程数（1 = 关闭并发）
     kline_start_date: str = "2015-01-01"         # 首次拉数的起始日（覆盖 2015 牛/2018 熊/2020 疫情/2021 抱团/2022 下跌/2023-2025 震荡）
     financial_lookback_quarters: int = 12        # 财报拉多少个季度
+    # 拉数据阶段的板块过滤（数据层唯一使用板块过滤的地方，独立于 QS_BOARD_FILTER）
+    # 支持：MAIN / MAIN,GEM / MAIN,STAR / MAIN,GEM,STAR / ALL
+    # 默认只拉主板（腾讯 hist_tx 对北交所支持差、量小不划算）
+    # 想拉全部：QS_DATA__FETCH_BOARDS=ALL
+    fetch_boards: str = "MAIN"
 
 
 class StockPoolConfig(BaseModel):

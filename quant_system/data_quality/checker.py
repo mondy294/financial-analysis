@@ -65,10 +65,20 @@ def run_checks(trade_date: date, repos: Repositories) -> QualitySummary:
 def _check_missing_kline(
     trade_date: date, repos: Repositories, summary: QualitySummary,
 ) -> None:
-    """当日 HS300 池成员是否都有 K 线。缺失记 WARN。"""
-    pool_code = get_settings().stock_pool.pool.value
+    """当日 HS300 池成员是否都有 K 线。缺失记 WARN。
+
+    只检查 fetch_boards 范围内的股票（默认主板），
+    避免非主板股票（不拉数据）产生大量误报。
+    """
+    settings = get_settings()
+    pool_code = settings.stock_pool.pool.value
     pool_code_db = "CUSTOM_DEFAULT" if pool_code == "CUSTOM" else pool_code
     members = repos.stock.list_pool_members(pool_code_db)
+    if not members:
+        return
+    # 与数据拉取阶段一致：只检查 fetch_boards 内的股票
+    from quant_system.data.data_update import _filter_by_fetch_boards
+    members = _filter_by_fetch_boards(members, settings)
     if not members:
         return
 

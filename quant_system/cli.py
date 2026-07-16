@@ -377,14 +377,19 @@ def feature(
 
         # 决定股票范围
         if codes_list:
+            # 用户显式 --codes：尊重用户意愿，不做 fetch_boards 过滤
             target_codes = codes_list
         else:
+            from quant_system.config.settings import get_settings
+            from quant_system.data.data_update import _filter_by_fetch_boards
+            settings = get_settings()
             pool_code = (pool or "").upper() or None
             if pool_code is None:
-                from quant_system.config.settings import get_settings
-                pool_code = get_settings().stock_pool.pool.value
+                pool_code = settings.stock_pool.pool.value
             pool_code_db = "CUSTOM_DEFAULT" if pool_code == "CUSTOM" else pool_code
             target_codes = repos.stock.list_pool_members(pool_code_db)
+            # 与 kline/financial 拉取阶段一致：默认只算主板特征，避免为无 K 线的股票白跑
+            target_codes = _filter_by_fetch_boards(target_codes, settings)
 
         if not target_codes:
             console.print("[red]股票范围为空，请先跑 update stock-basic + stock-pool[/red]")
@@ -604,9 +609,12 @@ def pipeline(
 
         # 2. feature
         console.print("\n[bold]▶ 2/5 feature[/bold]")
+        from quant_system.data.data_update import _filter_by_fetch_boards
         pool_code_db = settings.stock_pool.pool.value
         pool_code_db = "CUSTOM_DEFAULT" if pool_code_db == "CUSTOM" else pool_code_db
         codes = repos.stock.list_pool_members(pool_code_db)
+        # 与拉取阶段一致：默认只算主板
+        codes = _filter_by_fetch_boards(codes, settings)
         features, failed = build_features_for_date(codes, d, repos)
         repos.feature.upsert_features(features)
         console.print(f"  特征生成 {len(features)}，失败 {len(failed)}")

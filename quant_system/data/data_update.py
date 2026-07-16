@@ -31,8 +31,46 @@ from quant_system.data.financial_provider import FinancialProvider
 from quant_system.data.repository import Repositories
 from quant_system.data.stock_provider import StockProvider
 from quant_system.infra import trading_calendar as tc
+from quant_system.infra.board import Board, classify
 from quant_system.market.index_provider import DEFAULT_INDICES, IndexProvider
 from quant_system.market.sentiment import SentimentProvider
+
+
+# ============================================================================
+# 共享：按 QS_DATA__FETCH_BOARDS 过滤要拉的 codes（保留原顺序，去重）
+# ============================================================================
+
+def _parse_fetch_boards(raw: str) -> set[Board]:
+    """解析 fetch_boards 配置。ALL / 空 → 空集（表示不过滤）。"""
+    parts = [p.strip().upper() for p in raw.split(",") if p.strip()]
+    if not parts or "ALL" in parts:
+        return set()
+    allowed: set[Board] = set()
+    for p in parts:
+        try:
+            allowed.add(Board(p))
+        except ValueError:
+            continue
+    return allowed
+
+
+def _filter_by_fetch_boards(codes: list[str], settings: Settings) -> list[str]:
+    """按 QS_DATA__FETCH_BOARDS 过滤 codes（数据拉取阶段用）。
+
+    默认只拉主板（腾讯 hist_tx 对北交所支持差）。
+    QS_DATA__FETCH_BOARDS=ALL 时不过滤。
+    """
+    allowed = _parse_fetch_boards(settings.data.fetch_boards)
+    if not allowed:
+        return codes
+    filtered = [c for c in codes if classify(c) in allowed]
+    dropped = len(codes) - len(filtered)
+    if dropped > 0:
+        logger.info(
+            "fetch_boards={}：{} 只 → {} 只（过滤掉 {} 只非目标板块）",
+            settings.data.fetch_boards, len(codes), len(filtered), dropped,
+        )
+    return filtered
 
 
 # ============================================================================
@@ -230,6 +268,7 @@ class KlineUpdater(BaseUpdater):
     ) -> None:
         # 1. 决定股票范围
         if codes:
+            # 用户显式指定 --codes → 尊重用户意愿，不做 fetch_boards 过滤
             target_codes = codes
         else:
             pool_code = pool or self.settings.stock_pool.pool.value
@@ -237,6 +276,13 @@ class KlineUpdater(BaseUpdater):
             target_codes = self.repos.stock.list_pool_members(pool_code_db)
             if not target_codes:
                 logger.warning("池 {} 无成员，请先跑 update stock-pool", pool_code_db)
+                return
+            # 数据层板块过滤（默认只拉主板，避免腾讯不支持的北交所浪费重试）
+            target_codes = _filter_by_fetch_boards(target_codes, self.settings)
+            if not target_codes:
+                logger.warning(
+                    "fetch_boards 过滤后无股票，请检查 QS_DATA__FETCH_BOARDS 配置",
+                )
                 return
 
         stats.processed = len(target_codes)
@@ -447,6 +493,13 @@ class FinancialUpdater(BaseUpdater):
             pool_code = pool or self.settings.stock_pool.pool.value
             pool_code_db = "CUSTOM_DEFAULT" if pool_code == "CUSTOM" else pool_code
             target_codes = self.repos.stock.list_pool_members(pool_code_db)
+            # 数据层板块过滤（与 KlineUpdater 保持一致，避免财报也去拉北交所）
+            target_codes = _filter_by_fetch_boards(target_codes, self.settings)
+            if not target_codes:
+                logger.warning(
+                    "fetch_boards 过滤后无股票，请检查 QS_DATA__FETCH_BOARDS 配置",
+                )
+                return
 
         stats.processed = len(target_codes)
         quarters = self.settings.data.financial_lookback_quarters

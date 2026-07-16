@@ -40,6 +40,7 @@ reports/backtest/
 
 # ============ 临时探测 & 日志 ============
 scripts/_*
+scripts/probe_*.py
 *.log
 
 # ============ 数据库 ============

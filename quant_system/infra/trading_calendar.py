@@ -105,9 +105,35 @@ def trading_days_between(start: date, end: date) -> list[date]:
 
 
 def latest_trading_day(as_of: date | None = None) -> date:
-    """返回 as_of 及之前最近的一个交易日（含当日）。"""
-    as_of = as_of or date.today()
+    """返回 as_of 及之前最近的一个交易日。
+
+    **收盘感知**：如果 as_of=today 且当前时间早于当日收盘（15:30），
+    则视为"今天数据还没落地"，返回**前一个**交易日。
+    避免早上跑 feature 时用"今天"（还没有 K 线数据）导致全部失败。
+
+    - 参数 as_of 是明确指定的日期时（非 today），不做收盘感知（尊重用户意图）。
+    - QS_TRADING__CLOSE_HOUR / CLOSE_MINUTE 可覆盖收盘时刻。
+    """
     days = _cached_days()
+
+    if as_of is None:
+        now = datetime.now()
+        today = now.date()
+        # 收盘时刻（A 股 15:00 收盘；预留半小时给行情源结算，用 15:30 更稳）
+        close_hour, close_minute = 15, 30
+        try:
+            from quant_system.config.settings import get_settings  # 延迟 import 避免循环
+            trading_cfg = getattr(get_settings(), "trading", None)
+            if trading_cfg is not None:
+                close_hour = getattr(trading_cfg, "close_hour", close_hour)
+                close_minute = getattr(trading_cfg, "close_minute", close_minute)
+        except Exception:
+            pass
+
+        # 收盘前 → 用昨天
+        before_close = (now.hour, now.minute) < (close_hour, close_minute)
+        as_of = today - timedelta(days=1) if before_close else today
+
     idx = bisect.bisect_right(days, as_of) - 1
     if idx < 0:
         raise ValueError("日历范围不足")

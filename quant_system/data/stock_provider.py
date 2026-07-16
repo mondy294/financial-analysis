@@ -87,24 +87,48 @@ class StockProvider(Protocol):
 
 import threading  # noqa: E402
 
+# 全局节流状态（跨线程共享；throttle_global=True 时使用）
 _last_call_at: float = 0.0
 _throttle_lock = threading.Lock()
 
+# 每线程独立节流状态（throttle_global=False 时使用，达到真并发）
+_thread_local = threading.local()
+
 
 def _throttle() -> None:
-    """全局节流：两次 akshare 调用之间至少间隔 request_interval_ms（线程安全）。
+    """akshare 调用节流。
 
-    在多线程并发下，这个函数保证跨所有线程的调用之间也遵守间隔，
-    避免多个线程同时打爆同一个 akshare 服务端。
+    两种模式（通过 QS_DATA__THROTTLE_GLOBAL 切换）：
+
+    - **True（全局节流，保守）**：所有线程共享一个 `_last_call_at`，跨线程串行等待。
+      QPS 上限 = 1000 / interval_ms。并发数再高也不会加速。适合脆弱数据源（东财）。
+
+    - **False（每线程节流，激进）**：每个 worker 线程独立计时，互不干扰。
+      QPS 上限 = concurrency × (1000 / interval_ms)。适合稳定数据源（腾讯）。
+      **注意**：可能触发数据源风控（腾讯目前未验证到极限）。
+
+    默认 False（真并发），因为项目已切腾讯数据源。
     """
-    global _last_call_at
-    interval = get_settings().data.akshare_request_interval_ms / 1000.0
-    with _throttle_lock:
+    cfg = get_settings().data
+    interval = cfg.akshare_request_interval_ms / 1000.0
+
+    if cfg.throttle_global:
+        # 全局节流：跨线程串行
+        global _last_call_at
+        with _throttle_lock:
+            now = time.time()
+            wait = interval - (now - _last_call_at)
+            if wait > 0:
+                time.sleep(wait)
+            _last_call_at = time.time()
+    else:
+        # 每线程独立节流：真并发
+        last = getattr(_thread_local, "last_call_at", 0.0)
         now = time.time()
-        wait = interval - (now - _last_call_at)
+        wait = interval - (now - last)
         if wait > 0:
             time.sleep(wait)
-        _last_call_at = time.time()
+        _thread_local.last_call_at = time.time()
 
 
 def _retry():
@@ -222,6 +246,17 @@ class AkshareStockProvider:
             force_refresh=force_refresh,
         )
 
+    # 数据源不支持的板块（腾讯 hist_tx 对北交所 JSON 结构异常，会抛 KeyError）
+    # 命中这些板块的股票直接返回空 df，不发起网络请求
+    _UNSUPPORTED_MARKETS: tuple[str, ...] = ("BJ",)
+
+    def _empty_kline_df(self) -> pd.DataFrame:
+        return pd.DataFrame(columns=[
+            "code", "trade_date", "open", "high", "low", "close",
+            "pre_close", "volume", "amount", "turnover_rate",
+            "pct_change", "adj_factor",
+        ])
+
     @_retry()
     def _fetch_daily_kline_raw(self, code: str, start: date, end: date) -> pd.DataFrame:
         """使用腾讯行情接口拉日线（东财 push2his 常被限流/封 IP）。
@@ -229,7 +264,14 @@ class AkshareStockProvider:
         腾讯 stock_zh_a_hist_tx 支持 adjust='' / 'qfq' / 'hfq'，
         返回列 [date, open, close, high, low, amount]（其中 amount 实际是"成交量/股"）。
         换手率、涨跌幅腾讯不返回，本地计算/留空。
+
+        北交所（.BJ）腾讯不支持，直接返回空 df，避免每只都跑 3 次重试浪费时间。
         """
+        # 早退：腾讯不支持的板块（北交所）
+        market = code.split(".")[-1].upper() if "." in code else ""
+        if market in self._UNSUPPORTED_MARKETS:
+            return self._empty_kline_df()
+
         import akshare as ak
 
         tx_symbol = _to_tx_symbol(code)
@@ -237,22 +279,30 @@ class AkshareStockProvider:
         end_str = end.strftime("%Y%m%d")
 
         _throttle()
-        df_raw = ak.stock_zh_a_hist_tx(
-            symbol=tx_symbol,
-            start_date=start_str, end_date=end_str, adjust="",
-        )
+        try:
+            df_raw = ak.stock_zh_a_hist_tx(
+                symbol=tx_symbol,
+                start_date=start_str, end_date=end_str, adjust="",
+            )
+        except KeyError as e:
+            # 腾讯 JSON 里 day/hfqday/qfqday 都没有 → akshare 抛 KeyError
+            # 说明该股票在腾讯数据源就是空，不再重试，直接返回空 df
+            logger.debug("腾讯 hist_tx {} 无数据(KeyError: {})，返回空 df", code, e)
+            return self._empty_kline_df()
+
         if df_raw is None or df_raw.empty:
-            return pd.DataFrame(columns=[
-                "code", "trade_date", "open", "high", "low", "close",
-                "pre_close", "volume", "amount", "turnover_rate",
-                "pct_change", "adj_factor",
-            ])
+            return self._empty_kline_df()
 
         _throttle()
-        df_hfq = ak.stock_zh_a_hist_tx(
-            symbol=tx_symbol,
-            start_date=start_str, end_date=end_str, adjust="hfq",
-        )
+        try:
+            df_hfq = ak.stock_zh_a_hist_tx(
+                symbol=tx_symbol,
+                start_date=start_str, end_date=end_str, adjust="hfq",
+            )
+        except KeyError as e:
+            # 后复权失败：raw 有数据 hfq 没有 → adj_factor 默认 1.0 也可用
+            logger.debug("腾讯 hist_tx hfq {} 失败(KeyError: {})，adj_factor 用 1.0", code, e)
+            df_hfq = None
 
         return self._transform_kline_tx(code, df_raw, df_hfq)
 
