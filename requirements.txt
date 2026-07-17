@@ -10,6 +10,7 @@ pandas>=2.2.0
 numpy>=1.26.0,<2.1.0            # pandas-ta 对 numpy 2.x 兼容仍有问题，锁在 <2.1
 pandas-ta>=0.3.14b0             # 技术指标（纯 Python，无编译）
 scipy>=1.11.0                   # pandas-ta 隐式依赖，显式声明
+networkx>=3.2                   # Similarity Graph / Louvain 社区发现
 
 # --- 数据库 ---
 SQLAlchemy>=2.0.30              # 2.x Mapped 风格 ORM

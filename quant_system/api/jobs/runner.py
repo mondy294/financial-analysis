@@ -120,3 +120,37 @@ def run_pattern_scan_job(
             for p in report.per_pattern
         ],
     }
+
+
+def run_pattern_dry_scan_job(
+    job: JobRecord,
+    *,
+    pattern_id: str,
+    trade_date: date,
+    limit: int,
+    body: dict[str, Any] | None = None,
+) -> None:
+    """草稿试扫：不写 abnormal_signal。"""
+    from quant_system.api.services import definitions as def_svc
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+
+    def _progress(p: float, msg: str) -> None:
+        job.progress = max(0.0, min(0.95, float(p)))
+        job.message = msg
+
+    job.message = f"dry-scan {pattern_id} @ {trade_date.isoformat()}"
+    job.progress = 0.05
+    with session_scope() as session:
+        repos = build_repositories(session)
+        result = def_svc.run_dry_scan(
+            repos,
+            pattern_id,
+            trade_date=trade_date,
+            limit=limit,
+            body=body,
+            progress_cb=_progress,
+        )
+    job.progress = 1.0
+    job.message = "dry-scan finished (not persisted)"
+    job.result = result

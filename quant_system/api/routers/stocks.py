@@ -4,7 +4,9 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 
-from quant_system.api.deps import get_repos
+from sqlalchemy.orm import Session
+
+from quant_system.api.deps import get_db_session, get_repos
 from quant_system.api.schemas.relationships import StockRelationshipsOut
 from quant_system.api.schemas.stocks import (
     FeaturePointOut,
@@ -15,6 +17,7 @@ from quant_system.api.schemas.stocks import (
 )
 from quant_system.api.services import relationships as rel_svc
 from quant_system.api.services import stocks as stock_svc
+from quant_system.cluster import queries as cluster_q  # noqa: I001 — 勿经 cluster 包级拉 networkx
 from quant_system.data.repository import Repositories
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
@@ -89,3 +92,22 @@ def relationships(
             limit=limit,
         )
     )
+
+
+@router.get("/{code}/cluster")
+def stock_cluster(
+    code: str,
+    profile_id: str = Query("pearson_w60"),
+    peers: int = Query(12, ge=1, le=50),
+    session: Session = Depends(get_db_session),
+) -> dict:
+    data = cluster_q.stock_cluster(
+        session, code.upper(), profile_id=profile_id, peers=peers
+    )
+    return data or {
+        "profile_id": profile_id,
+        "cluster_id": None,
+        "label": None,
+        "size": 0,
+        "peers": [],
+    }

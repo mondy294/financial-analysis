@@ -5,6 +5,7 @@ from typing import Literal
 
 
 TargetMode = Literal["two_sided", "one_sided_high", "one_sided_low"]
+StageRole = Literal["range", "up", "down"]
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,8 @@ class Stage:
     name: str
     window: WindowConstraint
     targets: dict[str, TargetValue] = field(default_factory=dict)
+    # 引导编辑角色；None=未分类（高级/旧数据）。Matcher 打分不读此字段。
+    role: StageRole | None = None
 
 
 @dataclass(frozen=True)

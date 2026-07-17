@@ -11,9 +11,13 @@ from quant_system.patterns.result import FeatureValue
 FeatureCategory = Literal[
     "price", "volume", "volatility", "trend", "candle", "relation", "atom",
 ]
+FeatureTier = Literal["universal", "role_specific", "relation", "context"]
+StageRoleName = Literal["range", "up", "down"]
 
 StageAtoms = dict[str, float | None]
 StageFrames = dict[str, pd.DataFrame]
+
+ALL_STAGE_ROLES: frozenset[str] = frozenset({"range", "up", "down"})
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,12 @@ class FeatureSpec:
     category: FeatureCategory
     description: str
     kind: Literal["stage", "relation", "context", "atom"] = "stage"
+    # 引导编辑分层：universal=三角色可用；role_specific=仅 roles 内角色
+    tier: FeatureTier = "universal"
+    # None / 含 "all" → 全角色；否则为允许的 StageRole 集合
+    roles: frozenset[str] | None = None
+    ui_group: str = "price"
+    default_target: dict[str, Any] | None = None
     extract_stage: Callable[[pd.DataFrame], FeatureValue] | None = None
     extract_relation: Callable[
         [dict[str, StageAtoms], dict[str, str], StageFrames | None], FeatureValue
@@ -426,6 +436,142 @@ def extract_lower_shadow_ratio(df: pd.DataFrame) -> FeatureValue:
 
 
 # ---------------------------------------------------------------------------
+# P0 角色 / 通用新增
+# ---------------------------------------------------------------------------
+
+def extract_consecutive_up_days(df: pd.DataFrame) -> FeatureValue:
+    """从段首起连续上涨天数（整数）。单日：收>开计 1。"""
+    n = len(df)
+    if n == 0:
+        return _feat("consecutive_up_days", None)
+    close = df["close"].to_numpy(dtype=float)
+    open_ = df["open"].to_numpy(dtype=float)
+    if n == 1:
+        days = 1.0 if close[0] > open_[0] else 0.0
+        return _feat("consecutive_up_days", days)
+    run = 0
+    for i in range(1, n):
+        if close[i] > close[i - 1]:
+            run += 1
+        else:
+            break
+    return _feat("consecutive_up_days", float(run))
+
+
+def extract_consecutive_down_days(df: pd.DataFrame) -> FeatureValue:
+    """从段首起连续下跌天数（整数）。单日：收<开计 1。"""
+    n = len(df)
+    if n == 0:
+        return _feat("consecutive_down_days", None)
+    close = df["close"].to_numpy(dtype=float)
+    open_ = df["open"].to_numpy(dtype=float)
+    if n == 1:
+        days = 1.0 if close[0] < open_[0] else 0.0
+        return _feat("consecutive_down_days", days)
+    run = 0
+    for i in range(1, n):
+        if close[i] < close[i - 1]:
+            run += 1
+        else:
+            break
+    return _feat("consecutive_down_days", float(run))
+
+
+def extract_consecutive_down_ratio(df: pd.DataFrame) -> FeatureValue:
+    """从段首连续下跌长度 / 可比较天数。"""
+    n = len(df)
+    if n == 0:
+        return _feat("consecutive_down_ratio", None)
+    close = df["close"].to_numpy(dtype=float)
+    open_ = df["open"].to_numpy(dtype=float)
+    if n == 1:
+        return _feat("consecutive_down_ratio", 1.0 if close[0] < open_[0] else 0.0)
+    run = 0
+    for i in range(1, n):
+        if close[i] < close[i - 1]:
+            run += 1
+        else:
+            break
+    return _feat("consecutive_down_ratio", run / (n - 1), consecutive_down_days=run)
+
+
+def extract_down_day_ratio(df: pd.DataFrame) -> FeatureValue:
+    """下跌日占比：多日用 close<prev_close；单日用 close<open。"""
+    n = len(df)
+    if n == 0:
+        return _feat("down_day_ratio", None)
+    close = df["close"].to_numpy(dtype=float)
+    if n == 1:
+        open_ = float(df["open"].iloc[0])
+        return _feat("down_day_ratio", 1.0 if close[0] < open_ else 0.0)
+    downs = int(np.sum(close[1:] < close[:-1]))
+    return _feat("down_day_ratio", downs / (n - 1), down_days=downs, transitions=n - 1)
+
+
+def extract_return_slope_accel(df: pd.DataFrame) -> FeatureValue:
+    """后半段 slope − 前半段 slope；>0 越涨越快 / 跌势放缓。"""
+    n = len(df)
+    if n < 4:
+        return _feat("return_slope_accel", None)
+    mid = n // 2
+    left = df.iloc[:mid]
+    right = df.iloc[mid:]
+    s_left, _, _ = _linear_fit_close(left)
+    s_right, _, _ = _linear_fit_close(right)
+    if s_left is None or s_right is None:
+        return _feat("return_slope_accel", None)
+    return _feat(
+        "return_slope_accel",
+        float(s_right - s_left),
+        slope_first_half=s_left,
+        slope_second_half=s_right,
+    )
+
+
+def extract_close_accel_ratio(df: pd.DataFrame) -> FeatureValue:
+    """后半段 total_return / 前半段 total_return；>1 加速（符号同向时）。"""
+    n = len(df)
+    if n < 4:
+        return _feat("close_accel_ratio", None)
+    mid = n // 2
+    left = df.iloc[:mid]
+    right = df.iloc[mid:]
+    r_left = extract_total_return(left).value
+    r_right = extract_total_return(right).value
+    if r_left is None or r_right is None:
+        return _feat("close_accel_ratio", None)
+    if abs(r_left) < 1e-12:
+        return _feat("close_accel_ratio", None, note="first_half_return_near_zero")
+    return _feat(
+        "close_accel_ratio",
+        float(r_right / r_left),
+        return_first_half=r_left,
+        return_second_half=r_right,
+    )
+
+
+def extract_max_drawdown_in_window(df: pd.DataFrame) -> FeatureValue:
+    """段内最大回撤（正数）：从运行高点到后续低点的最大跌幅。"""
+    if df.empty:
+        return _feat("max_drawdown_in_window", None)
+    close = df["close"].to_numpy(dtype=float)
+    if not np.any(np.isfinite(close)):
+        return _feat("max_drawdown_in_window", None)
+    peak = close[0]
+    max_dd = 0.0
+    for c in close:
+        if not np.isfinite(c):
+            continue
+        if c > peak:
+            peak = c
+        if peak > 0:
+            dd = 1.0 - c / peak
+            if dd > max_dd:
+                max_dd = dd
+    return _feat("max_drawdown_in_window", float(max_dd))
+
+
+# ---------------------------------------------------------------------------
 # Atoms / Relations
 # ---------------------------------------------------------------------------
 
@@ -561,97 +707,244 @@ def extract_close_vs_high(df: pd.DataFrame) -> FeatureValue:
     return _feat("close_vs_high", close / high - 1.0, high=high, close=close, n=len(df))
 
 
+def _stage(
+    name: str,
+    category: FeatureCategory,
+    description: str,
+    extract: Callable[[pd.DataFrame], FeatureValue],
+    *,
+    tier: FeatureTier = "universal",
+    roles: frozenset[str] | None = None,
+    ui_group: str = "price",
+    default_target: dict[str, Any] | None = None,
+) -> FeatureSpec:
+    if roles is None and tier == "universal":
+        roles = ALL_STAGE_ROLES
+    return FeatureSpec(
+        name=name,
+        category=category,
+        description=description,
+        kind="stage",
+        tier=tier,
+        roles=roles,
+        ui_group=ui_group,
+        default_target=default_target,
+        extract_stage=extract,
+    )
+
+
 FEATURE_CATALOG: dict[str, FeatureSpec] = {
-    # 长/通用
-    "amplitude": FeatureSpec("amplitude", "volatility", "切片 (high_max-low_min)/low_min", kind="stage", extract_stage=extract_amplitude),
-    "close_vs_window_high": FeatureSpec(
+    # ---- L0 通用段内 ----
+    "amplitude": _stage(
+        "amplitude", "volatility", "切片 (high_max-low_min)/low_min",
+        extract_amplitude, ui_group="price",
+        default_target={"ideal": 0.08, "tolerance": 0.06, "mode": "one_sided_low"},
+    ),
+    "close_vs_window_high": _stage(
         "close_vs_window_high", "price",
         "close_last/段内high_max - 1（相对窗口高点回撤）",
-        kind="stage", extract_stage=extract_close_vs_window_high,
+        extract_close_vs_window_high, ui_group="price",
     ),
-    "peak_day": FeatureSpec(
+    "peak_day": _stage(
         "peak_day", "trend",
         "段内最高价位置 [0,1]，0=段首 1=段尾",
-        kind="stage", extract_stage=extract_peak_day,
+        extract_peak_day, ui_group="path",
     ),
-    "total_return": FeatureSpec(
+    "total_return": _stage(
         "total_return", "price",
         "多日: close_last/close_first-1；单日: close/前收-1",
-        kind="stage", extract_stage=extract_total_return,
+        extract_total_return, ui_group="price",
+        default_target={"ideal": 0.05, "tolerance": 0.05, "mode": "one_sided_high"},
     ),
-    "slope": FeatureSpec(
+    "slope": _stage(
         "slope", "trend",
         "close~t 最小二乘拟合斜率/均价（非首尾相连）",
-        kind="stage", extract_stage=extract_slope,
+        extract_slope, ui_group="path",
+        default_target={"ideal": 0.0, "tolerance": 0.01, "mode": "two_sided"},
     ),
-    "linearity": FeatureSpec(
+    "linearity": _stage(
         "linearity", "trend",
         "close~t 直线拟合 R²，越接近1越像直线",
-        kind="stage", extract_stage=extract_linearity,
+        extract_linearity, ui_group="path",
     ),
-    "volatility": FeatureSpec("volatility", "volatility", "日收益标准差", kind="stage", extract_stage=extract_volatility),
-    "volume_shrink_ratio": FeatureSpec("volume_shrink_ratio", "volume", "后半段均量/前半段均量", kind="stage", extract_stage=extract_volume_shrink_ratio),
-    "bull_ratio": FeatureSpec("bull_ratio", "candle", "阳线占比", kind="stage", extract_stage=extract_bull_ratio),
-    "body_ratio": FeatureSpec("body_ratio", "candle", "实体/振幅均值", kind="stage", extract_stage=extract_body_ratio),
-    "avg_volume": FeatureSpec("avg_volume", "volume", "均量", kind="stage", extract_stage=extract_avg_volume),
-    # 短阶段价格路径
-    "gap_open": FeatureSpec(
+    "volatility": _stage(
+        "volatility", "volatility", "日收益标准差",
+        extract_volatility, ui_group="price",
+    ),
+    "volume_shrink_ratio": _stage(
+        "volume_shrink_ratio", "volume", "后半段均量/前半段均量",
+        extract_volume_shrink_ratio, ui_group="volume",
+    ),
+    "bull_ratio": _stage(
+        "bull_ratio", "candle", "阳线占比",
+        extract_bull_ratio, ui_group="quality",
+    ),
+    "body_ratio": _stage(
+        "body_ratio", "candle", "实体/振幅均值",
+        extract_body_ratio, ui_group="quality",
+    ),
+    "avg_volume": _stage(
+        "avg_volume", "volume", "均量",
+        extract_avg_volume, ui_group="volume",
+    ),
+    "gap_open": _stage(
         "gap_open", "price",
         "段首 open/前收-1（跳高开为正）",
-        kind="stage", extract_stage=extract_gap_open,
+        extract_gap_open, ui_group="price",
     ),
-    "return_first": FeatureSpec("return_first", "price", "首日 (close/open-1)", kind="stage", extract_stage=extract_return_first),
-    "return_last": FeatureSpec("return_last", "price", "尾日 (close/open-1)", kind="stage", extract_stage=extract_return_last),
-    "return_acceleration": FeatureSpec("return_acceleration", "price", "尾日涨幅-首日涨幅", kind="stage", extract_stage=extract_return_acceleration),
-    "up_day_ratio": FeatureSpec("up_day_ratio", "price", "上涨日占比", kind="stage", extract_stage=extract_up_day_ratio),
-    "consecutive_up_ratio": FeatureSpec("consecutive_up_ratio", "price", "从段首连续上涨占比", kind="stage", extract_stage=extract_consecutive_up_ratio),
-    "stall_score": FeatureSpec("stall_score", "price", "滞涨分（首强尾弱）", kind="stage", extract_stage=extract_stall_score),
-    "close_strength": FeatureSpec("close_strength", "candle", "收盘在振幅中的位置", kind="stage", extract_stage=extract_close_strength),
-    # 短阶段量能路径
-    "volume_up_ratio": FeatureSpec("volume_up_ratio", "volume", "放量日占比", kind="stage", extract_stage=extract_volume_up_ratio),
-    "consecutive_volume_up_ratio": FeatureSpec("consecutive_volume_up_ratio", "volume", "从段首连续放量占比", kind="stage", extract_stage=extract_consecutive_volume_up_ratio),
-    "volume_acceleration": FeatureSpec("volume_acceleration", "volume", "尾日量/首日量", kind="stage", extract_stage=extract_volume_acceleration),
-    "volume_last_vs_avg": FeatureSpec("volume_last_vs_avg", "volume", "尾日量/段内均量", kind="stage", extract_stage=extract_volume_last_vs_avg),
-    "volume_climax_day": FeatureSpec("volume_climax_day", "volume", "最大量位置 0~1", kind="stage", extract_stage=extract_volume_climax_day),
-    # K 线质量
-    "upper_shadow_ratio": FeatureSpec("upper_shadow_ratio", "candle", "上影占比", kind="stage", extract_stage=extract_upper_shadow_ratio),
-    "lower_shadow_ratio": FeatureSpec("lower_shadow_ratio", "candle", "下影占比", kind="stage", extract_stage=extract_lower_shadow_ratio),
-    # Relation
+    "close_strength": _stage(
+        "close_strength", "candle", "收盘在振幅中的位置",
+        extract_close_strength, ui_group="quality",
+    ),
+    "volume_up_ratio": _stage(
+        "volume_up_ratio", "volume", "放量日占比",
+        extract_volume_up_ratio, ui_group="volume",
+    ),
+    "volume_acceleration": _stage(
+        "volume_acceleration", "volume", "尾日量/首日量",
+        extract_volume_acceleration, ui_group="volume",
+    ),
+    "volume_last_vs_avg": _stage(
+        "volume_last_vs_avg", "volume", "尾日量/段内均量",
+        extract_volume_last_vs_avg, ui_group="volume",
+    ),
+    "volume_climax_day": _stage(
+        "volume_climax_day", "volume", "最大量位置 0~1",
+        extract_volume_climax_day, ui_group="volume",
+    ),
+    "upper_shadow_ratio": _stage(
+        "upper_shadow_ratio", "candle", "上影占比",
+        extract_upper_shadow_ratio, ui_group="quality",
+    ),
+    "lower_shadow_ratio": _stage(
+        "lower_shadow_ratio", "candle", "下影占比",
+        extract_lower_shadow_ratio, ui_group="quality",
+    ),
+    "max_drawdown_in_window": _stage(
+        "max_drawdown_in_window", "price",
+        "段内最大回撤（正数，从运行高点算）",
+        extract_max_drawdown_in_window, ui_group="price",
+        default_target={"ideal": 0.05, "tolerance": 0.05, "mode": "one_sided_low"},
+    ),
+    # ---- L1 上涨专用 ----
+    "return_first": _stage(
+        "return_first", "price", "首日 (close/open-1)",
+        extract_return_first, tier="role_specific", roles=frozenset({"up"}),
+        ui_group="price",
+    ),
+    "return_last": _stage(
+        "return_last", "price", "尾日 (close/open-1)",
+        extract_return_last, tier="role_specific", roles=frozenset({"up", "down"}),
+        ui_group="price",
+    ),
+    "return_acceleration": _stage(
+        "return_acceleration", "price", "尾日涨幅-首日涨幅",
+        extract_return_acceleration, tier="role_specific", roles=frozenset({"up"}),
+        ui_group="path",
+    ),
+    "up_day_ratio": _stage(
+        "up_day_ratio", "price", "上涨日占比",
+        extract_up_day_ratio, tier="role_specific", roles=frozenset({"up"}),
+        ui_group="path",
+    ),
+    "consecutive_up_ratio": _stage(
+        "consecutive_up_ratio", "price", "从段首连续上涨占比",
+        extract_consecutive_up_ratio, tier="role_specific", roles=frozenset({"up"}),
+        ui_group="path",
+    ),
+    "consecutive_up_days": _stage(
+        "consecutive_up_days", "price", "从段首连续上涨天数",
+        extract_consecutive_up_days, tier="role_specific", roles=frozenset({"up"}),
+        ui_group="path",
+        default_target={
+            "ideal": 2.0, "tolerance": 1.0, "mode": "one_sided_high", "hard_min": 1.0,
+        },
+    ),
+    "stall_score": _stage(
+        "stall_score", "price", "滞涨分（首强尾弱）",
+        extract_stall_score, tier="role_specific", roles=frozenset({"up"}),
+        ui_group="path",
+        default_target={"ideal": 0.0, "tolerance": 0.5, "mode": "one_sided_low"},
+    ),
+    "consecutive_volume_up_ratio": _stage(
+        "consecutive_volume_up_ratio", "volume", "从段首连续放量占比",
+        extract_consecutive_volume_up_ratio, tier="role_specific", roles=frozenset({"up"}),
+        ui_group="volume",
+    ),
+    "return_slope_accel": _stage(
+        "return_slope_accel", "trend",
+        "后半段slope−前半段slope（加速/减速）",
+        extract_return_slope_accel, tier="role_specific", roles=frozenset({"up", "down"}),
+        ui_group="path",
+    ),
+    "close_accel_ratio": _stage(
+        "close_accel_ratio", "price",
+        "后半段total_return/前半段（>1加速）",
+        extract_close_accel_ratio, tier="role_specific", roles=frozenset({"up", "down"}),
+        ui_group="path",
+    ),
+    # ---- L1 下跌专用 ----
+    "down_day_ratio": _stage(
+        "down_day_ratio", "price", "下跌日占比",
+        extract_down_day_ratio, tier="role_specific", roles=frozenset({"down"}),
+        ui_group="path",
+    ),
+    "consecutive_down_days": _stage(
+        "consecutive_down_days", "price", "从段首连续下跌天数",
+        extract_consecutive_down_days, tier="role_specific", roles=frozenset({"down"}),
+        ui_group="path",
+        default_target={
+            "ideal": 2.0, "tolerance": 1.0, "mode": "one_sided_high", "hard_min": 1.0,
+        },
+    ),
+    "consecutive_down_ratio": _stage(
+        "consecutive_down_ratio", "price", "从段首连续下跌占比",
+        extract_consecutive_down_ratio, tier="role_specific", roles=frozenset({"down"}),
+        ui_group="path",
+    ),
+    # ---- L2 Relation ----
     "breakout_distance": FeatureSpec(
         "breakout_distance", "relation",
         "(breakout.close_last - platform.high_max) / platform.high_max",
-        kind="relation", extract_relation=relation_breakout_distance,
+        kind="relation", tier="relation", ui_group="relation",
+        extract_relation=relation_breakout_distance,
     ),
     "volume_vs_platform": FeatureSpec(
         "volume_vs_platform", "relation",
         "breakout.avg_volume / platform.avg_volume",
-        kind="relation", extract_relation=relation_volume_vs_platform,
+        kind="relation", tier="relation", ui_group="relation",
+        extract_relation=relation_volume_vs_platform,
     ),
     "close_vs_platform_mid": FeatureSpec(
         "close_vs_platform_mid", "relation",
         "(breakout.close_last - platform_mid) / platform_mid",
-        kind="relation", extract_relation=relation_close_vs_platform_mid,
+        kind="relation", tier="relation", ui_group="relation",
+        extract_relation=relation_close_vs_platform_mid,
     ),
     "break_hold_ratio": FeatureSpec(
         "break_hold_ratio", "relation",
         "突破段收盘站上平台高点的天数占比",
-        kind="relation", extract_relation=relation_break_hold_ratio,
+        kind="relation", tier="relation", ui_group="relation",
+        extract_relation=relation_break_hold_ratio,
     ),
-    # Context（股票级价位，由 ContextSpec.lookback_bars 决定历史范围）
+    # ---- L2 Context ----
     "price_position": FeatureSpec(
         "price_position", "price",
         "close 在 lookback 高低区间位置 [0,1]",
-        kind="context", extract_context=extract_price_position,
+        kind="context", tier="context", ui_group="context",
+        extract_context=extract_price_position,
     ),
     "price_percentile": FeatureSpec(
         "price_percentile", "price",
         "close 在 lookback 收盘分位 [0,1]",
-        kind="context", extract_context=extract_price_percentile,
+        kind="context", tier="context", ui_group="context",
+        extract_context=extract_price_percentile,
     ),
     "close_vs_high": FeatureSpec(
         "close_vs_high", "price",
         "close/lookback_high - 1（相对高点回撤）",
-        kind="context", extract_context=extract_close_vs_high,
+        kind="context", tier="context", ui_group="context",
+        extract_context=extract_close_vs_high,
     ),
 }
 
@@ -664,3 +957,49 @@ def get_feature(name: str) -> FeatureSpec:
 
 def list_features() -> list[str]:
     return sorted(FEATURE_CATALOG)
+
+
+def feature_allows_role(name: str, role: str) -> bool:
+    """stage 特征是否允许挂在给定角色上。"""
+    spec = FEATURE_CATALOG.get(name)
+    if spec is None or spec.kind != "stage":
+        return False
+    if spec.tier == "universal":
+        return True
+    roles = spec.roles
+    if roles is None or "all" in roles:
+        return True
+    return role in roles
+
+
+def features_for_role(role: str | None, *, include_all_when_no_role: bool = True) -> list[str]:
+    """引导模式可见的 stage 特征名列表。"""
+    out: list[str] = []
+    for name, spec in FEATURE_CATALOG.items():
+        if spec.kind != "stage":
+            continue
+        if role is None:
+            if include_all_when_no_role:
+                out.append(name)
+            continue
+        if feature_allows_role(name, role):
+            out.append(name)
+    return sorted(out)
+
+
+def feature_public_dict(spec: FeatureSpec) -> dict[str, Any]:
+    roles_out: list[str] | None
+    if spec.roles is None:
+        roles_out = None
+    else:
+        roles_out = sorted(spec.roles)
+    return {
+        "name": spec.name,
+        "category": spec.category,
+        "kind": spec.kind,
+        "description": spec.description,
+        "tier": spec.tier,
+        "roles": roles_out,
+        "ui_group": spec.ui_group,
+        "default_target": spec.default_target,
+    }

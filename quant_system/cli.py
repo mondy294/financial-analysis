@@ -37,6 +37,7 @@ pool_app = typer.Typer(help="股票池管理")
 signal_app = typer.Typer(help="策略信号查询")
 cache_app = typer.Typer(help="缓存管理")
 relationship_app = typer.Typer(help="股票关系层（相关度/联动）")
+similarity_app = typer.Typer(help="Similarity Framework（边+聚类编排）")
 abnormal_app = typer.Typer(help="异动 Pattern Engine（分模式检测）")
 
 app.add_typer(update_app, name="update")
@@ -44,6 +45,7 @@ app.add_typer(pool_app, name="pool")
 app.add_typer(signal_app, name="signal")
 app.add_typer(cache_app, name="cache")
 app.add_typer(relationship_app, name="relationship")
+app.add_typer(similarity_app, name="similarity")
 app.add_typer(abnormal_app, name="abnormal")
 
 console = Console()
@@ -865,6 +867,92 @@ def _parse_windows_arg(raw: Optional[str]) -> list[str]:
     return out or list(DEFAULT_WINDOWS)
 
 
+@similarity_app.command("refresh")
+def similarity_refresh_cmd(
+    trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+    windows: Annotated[Optional[str], typer.Option("--windows", help="如 60,250")] = None,
+    pool: Annotated[Optional[str], typer.Option("--pool")] = None,
+    board_filter: Annotated[Optional[str], typer.Option("--board")] = None,
+    min_sample: Annotated[int, typer.Option("--min-sample")] = 120,
+    threshold: Annotated[float, typer.Option("--threshold")] = 0.3,
+    max_neighbors: Annotated[int, typer.Option("--max-neighbors")] = 200,
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    force: Annotated[bool, typer.Option("--force")] = False,
+    no_cluster: Annotated[bool, typer.Option("--no-cluster")] = False,
+    cluster_w_min: Annotated[float, typer.Option("--cluster-w-min")] = 0.45,
+    cluster_conf_min: Annotated[float, typer.Option("--cluster-conf-min")] = 0.5,
+    pipeline_recipe: Annotated[
+        str,
+        typer.Option(
+            "--pipeline-recipe",
+            help="16 Pipeline：return_cfr_auto_v1（默认残差）/ return_raw_v1（毛收益对照）",
+        ),
+    ] = "return_cfr_auto_v1",
+) -> None:
+    """Pearson 边 +（默认）W60/W250 聚类，一次完成。默认经公共结构剥离后再相关。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+    from quant_system.similarity.service import refresh_similarity
+
+    _boot()
+    d = _parse_date(trade_date)
+    wins = _parse_windows_arg(windows)
+    console.print(
+        f"[bold]similarity.refresh[/bold] → {d} windows={wins} "
+        f"recipe={pipeline_recipe} "
+        f"cluster={'off' if no_cluster or dry_run else 'on'}"
+    )
+    with session_scope() as session:
+        repos = build_repositories(session)
+        job_id = None if dry_run else repos.job_log.start_job("similarity.refresh", d)
+        try:
+            report = refresh_similarity(
+                repos,
+                session,
+                calc_date=d,
+                windows=wins,
+                pool_code=pool,
+                board_filter=board_filter or "MAIN",
+                min_sample=min_sample,
+                value_threshold=threshold,
+                max_neighbors=max_neighbors,
+                dry_run=dry_run,
+                force=force,
+                with_cluster=not no_cluster,
+                cluster_w_min=cluster_w_min,
+                cluster_conf_min=cluster_conf_min,
+                pipeline_recipe=pipeline_recipe,
+            )
+            if job_id is not None:
+                repos.job_log.finish_job(
+                    job_id,
+                    "FAILED" if report.error else "SUCCESS",
+                    stats=report.to_dict(),
+                    error=report.error,
+                )
+        except Exception as e:
+            if job_id is not None:
+                repos.job_log.finish_job(job_id, "FAILED", error=str(e))
+            raise
+
+    if report.relationship and report.relationship.skipped:
+        console.print("[yellow]关系批次已存在（跳过重算边）；聚类仍会执行[/yellow]")
+    if report.relationship:
+        console.print(
+            f"边：宇宙 {report.relationship.universe_size} 写入 "
+            f"{report.relationship.pair_written_total} 耗时 {report.relationship.duration_ms}ms"
+        )
+    for c in report.clusters:
+        style = "green" if c.status == "SUCCESS" else "red"
+        console.print(
+            f"[{style}]簇 {c.profile_id}: {c.status} n={c.n_clusters} "
+            f"edges={c.edge_used} Q={c.modularity:.3f} res={c.resolution:.2f} "
+            f"{c.duration_ms}ms[/{style}]"
+        )
+        if c.error:
+            console.print(f"[red]{c.error}[/red]")
+
+
 @relationship_app.command("build")
 def relationship_build_cmd(
     trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
@@ -879,8 +967,24 @@ def relationship_build_cmd(
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
     force: Annotated[bool, typer.Option("--force")] = False,
     no_cache: Annotated[bool, typer.Option("--no-cache")] = False,
+    no_cluster: Annotated[bool, typer.Option("--no-cluster")] = False,
 ) -> None:
-    """计算并落库股票关系（默认 Pearson，W60+W250 双窗口）。首次上线建议先 --dry-run。"""
+    """兼容入口：默认走 similarity.refresh（边+簇）；--no-cluster 只算边。"""
+    if relation_type.upper() == "PEARSON" and not no_cluster:
+        similarity_refresh_cmd(
+            trade_date=trade_date,
+            windows=windows,
+            pool=pool,
+            board_filter=board_filter,
+            min_sample=min_sample,
+            threshold=threshold,
+            max_neighbors=max_neighbors,
+            dry_run=dry_run,
+            force=force,
+            no_cluster=False,
+        )
+        return
+
     from quant_system.data.repository import build_repositories
     from quant_system.infra.db import session_scope
     from quant_system.relationship.service import build_relationships
@@ -901,6 +1005,7 @@ def relationship_build_cmd(
                 value_threshold=threshold, max_neighbors=max_neighbors,
                 full_lookback=full_lookback, dry_run=dry_run, force=force,
                 use_cache=not no_cache,
+                session=session,
             )
             if job_id is not None:
                 repos.job_log.finish_job(job_id, "SUCCESS", stats={
@@ -1246,7 +1351,7 @@ def abnormal_scan_cmd(
     force: Annotated[bool, typer.Option("--force")] = False,
 ) -> None:
     """跑形态相似度扫描（Prototype -> Similarity -> Pattern Rank）。"""
-    from quant_system.patterns.registry import PATTERN_REGISTRY
+    from quant_system.patterns.registry import get_registry
     from quant_system.patterns.service import build_patterns
     from quant_system.data.repository import build_repositories
     from quant_system.database.migrations import ensure_schema_columns
@@ -1257,7 +1362,7 @@ def abnormal_scan_cmd(
     d = _parse_date(trade_date)
     pids = [x.strip().upper() for x in patterns.split(",")] if patterns else None
     mode = "[yellow]DRY-RUN[/yellow]" if dry_run else "[bold]SCAN[/bold]"
-    console.print(f"{mode} pattern scan → {d} patterns={pids or list(PATTERN_REGISTRY)}")
+    console.print(f"{mode} pattern scan → {d} patterns={pids or list(get_registry())}")
 
     with session_scope() as session:
         repos = build_repositories(session)

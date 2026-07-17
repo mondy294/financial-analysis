@@ -532,6 +532,10 @@ class StockRelationship(Base):
     sample_size: Mapped[int] = mapped_column(Integer, nullable=False)
     direction: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
     is_same_industry: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Similarity Framework：score=relation_value；以下为协议补齐字段
+    confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))
+    breakdown_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    meta_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     __table_args__ = (
@@ -566,6 +570,63 @@ class StockRelationshipRun(Base):
     __table_args__ = (
         Index("ix_rel_run_asof", "calc_date", "relation_type"),
         Index("ix_rel_run_status", "status"),
+    )
+
+
+# ============================================================================
+# Stock Cluster Framework（3 张）
+# ============================================================================
+
+class StockClusterRun(Base):
+    """一次聚类作业 / 血缘。graph_spec_json 为 SimilarityGraphRequest 完整序列化。"""
+    __tablename__ = "stock_cluster_run"
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    calc_date: Mapped[date] = mapped_column(Date, nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(64), nullable=False, default="pearson_w60")
+    graph_spec_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    algo: Mapped[str] = mapped_column(String(16), nullable=False, default="LOUVAIN")
+    resolution: Mapped[Optional[float]] = mapped_column(Numeric(8, 4))
+    seed: Mapped[int] = mapped_column(Integer, nullable=False, default=42)
+    universe_size: Mapped[Optional[int]] = mapped_column(Integer)
+    edge_used: Mapped[Optional[int]] = mapped_column(Integer)
+    n_clusters: Mapped[Optional[int]] = mapped_column(Integer)
+    modularity: Mapped[Optional[float]] = mapped_column(Numeric(8, 4))
+    max_cluster_size: Mapped[Optional[int]] = mapped_column(Integer)
+    singleton_count: Mapped[Optional[int]] = mapped_column(Integer)
+    params_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    error_msg: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_cluster_run_profile", "profile_id", "calc_date"),
+        Index("ix_cluster_run_status", "status"),
+    )
+
+
+class StockCluster(Base):
+    __tablename__ = "stock_cluster"
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    cluster_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    avg_internal_similarity: Mapped[Optional[float]] = mapped_column(Numeric(8, 4))
+    density: Mapped[Optional[float]] = mapped_column(Numeric(8, 4))
+    representative_code: Mapped[Optional[str]] = mapped_column(String(16))
+    top_members_json: Mapped[Optional[list[Any]]] = mapped_column(JSON)
+
+
+class StockClusterMember(Base):
+    __tablename__ = "stock_cluster_member"
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    stock_code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    cluster_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    centrality: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
+    rank_in_cluster: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        Index("ix_cluster_member_cid", "run_id", "cluster_id", "rank_in_cluster"),
     )
 
 
@@ -616,6 +677,45 @@ class AbnormalRun(Base):
     __table_args__ = (
         Index("ix_abn_run_date", "trade_date"),
         Index("ix_abn_run_status", "status"),
+    )
+
+
+# ============================================================================
+# Pattern Definition 域（2 张）
+# ============================================================================
+
+class PatternDefinitionRow(Base):
+    """可编辑 Pattern 模板元数据（当前 published 指针 + 状态）。"""
+
+    __tablename__ = "pattern_definition"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    published_version: Mapped[Optional[str]] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class PatternDefinitionRevision(Base):
+    """Definition 版本快照；version=__draft__ 表示当前草稿。"""
+
+    __tablename__ = "pattern_definition_revision"
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True
+    )
+    pattern_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("pattern_definition.id"), nullable=False
+    )
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+    body_json: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String(64))
+
+    __table_args__ = (
+        UniqueConstraint("pattern_id", "version", name="uq_pattern_def_rev"),
+        Index("ix_pattern_def_rev_pid", "pattern_id", "created_at"),
     )
 
 
@@ -692,12 +792,16 @@ ALL_MODELS = [
     BacktestTask, BacktestResult,
     # 报告
     DailyReport, DailyReportItem,
-    # 关系
+    # 关系 / Similarity 边
     StockRelationship, StockRelationshipRun,
+    # 聚类
+    StockClusterRun, StockCluster, StockClusterMember,
     # 异动
     AbnormalSignal, AbnormalRun,
+    # Pattern Definition
+    PatternDefinitionRow, PatternDefinitionRevision,
     # 系统
     JobRunLog, DataSyncState, DataQualityCheck,
 ]
 
-assert len(ALL_MODELS) == 27, "表数量应为 27"
+assert len(ALL_MODELS) == 32, "表数量应为 32"

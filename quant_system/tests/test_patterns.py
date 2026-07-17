@@ -204,8 +204,32 @@ def test_feature_catalog_has_short_stage_set() -> None:
         "price_position", "price_percentile", "close_vs_high",
         "linearity", "gap_open",
         "close_vs_window_high", "peak_day",
+        "consecutive_up_days", "consecutive_down_days", "down_day_ratio",
+        "return_slope_accel", "close_accel_ratio", "max_drawdown_in_window",
     }
     assert required.issubset(names)
+
+
+def test_feature_role_visibility() -> None:
+    from quant_system.patterns.features.catalog import (
+        feature_allows_role,
+        features_for_role,
+        get_feature,
+    )
+
+    assert get_feature("amplitude").tier == "universal"
+    assert feature_allows_role("amplitude", "range")
+    assert feature_allows_role("consecutive_up_days", "up")
+    assert not feature_allows_role("consecutive_up_days", "range")
+    assert "consecutive_up_days" in features_for_role("up")
+    assert "consecutive_up_days" not in features_for_role("range")
+    assert "down_day_ratio" in features_for_role("down")
+
+
+def test_range_breakout_stages_have_roles() -> None:
+    definition = build_range_breakout_definition()
+    assert definition.timeline[0].role == "range"
+    assert definition.timeline[1].role == "up"
 
 
 def test_platform_targets_are_orthogonal_set() -> None:

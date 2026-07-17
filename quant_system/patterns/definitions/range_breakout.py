@@ -49,6 +49,7 @@ def build_range_breakout_definition() -> PatternDefinition:
     # ------------------------------------------------------------------
     platform = Stage(
         name="platform",
+        role="range",
         window=WindowConstraint(min_length=4, max_length=10),
         targets={
             # 箱体高度：(high_max - low_min) / low_min
@@ -87,6 +88,7 @@ def build_range_breakout_definition() -> PatternDefinition:
     # ------------------------------------------------------------------
     breakout = Stage(
         name="breakout",
+        role="up",
         # 只看最近 1~2 个交易日的突破表现
         window=WindowConstraint(min_length=1, max_length=1),
         targets={
@@ -235,14 +237,14 @@ def build_range_breakout_definition() -> PatternDefinition:
     context_features = [
         # price_position@252：一年高低区间位置 [0,1]
         # 硬约束：必须 <= 0.23（回溯期低位）
-        # ContextSpec(
-        #     name="price_position",
-        #     lookback_bars=252,
-        #     target=TargetValue(
-        #         ideal=0.23, tolerance=0.20, weight=1.0, mode="one_sided_low",
-        #         hard_max=0.23,
-        #     ),
-        # ),
+        ContextSpec(
+            name="price_position",
+            lookback_bars=252,
+            target=TargetValue(
+                ideal=0.23, tolerance=0.20, weight=1.0, mode="one_sided_low",
+                hard_max=0.23,
+            ),
+        ),
     ]
 
     return PatternDefinition(

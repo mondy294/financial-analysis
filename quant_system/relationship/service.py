@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from loguru import logger
 
@@ -21,9 +21,12 @@ from quant_system.relationship.returns_matrix import (
     max_window_days,
     parse_windows,
 )
+from quant_system.representation.facade import apply_return_pipeline, pipeline_meta_for_edges
+from quant_system.representation.recipes import RECIPE_RETURN_CFR_AUTO, RECIPE_RETURN_RAW
 
 if TYPE_CHECKING:
     from quant_system.data.repository import Repositories
+    from sqlalchemy.orm import Session
 
 DEFAULT_WINDOWS = ["W60", "W250"]
 DEFAULT_MIN_SAMPLE = 120
@@ -93,11 +96,14 @@ def build_relationships(
     dry_run: bool = False,
     force: bool = False,
     use_cache: bool = True,
+    pipeline_recipe: str = RECIPE_RETURN_CFR_AUTO,
+    session: Any = None,
 ) -> RunReport:
     relation_type = relation_type.upper()
     windows = windows or list(DEFAULT_WINDOWS)
     parse_windows(windows)  # 提前校验窗口合法性
     calc = get_calculator(relation_type)
+    recipe_id = (pipeline_recipe or RECIPE_RETURN_CFR_AUTO).strip()
 
     t0 = time.monotonic()
     codes, pool_code_db, board_filter = _resolve_universe(
@@ -123,6 +129,25 @@ def build_relationships(
         logger.warning("收益率宽表为空，终止")
         return report
 
+    edge_pipeline_meta: dict = {"recipe_id": recipe_id}
+    if relation_type == "PEARSON" and recipe_id != RECIPE_RETURN_RAW:
+        sess = session or getattr(repos.market, "_session", None)
+        if sess is None:
+            raise RuntimeError("PEARSON + CFR recipe 需要 SQLAlchemy session")
+        pipe_result = apply_return_pipeline(
+            matrix, session=sess, asof=calc_date, recipe_id=recipe_id
+        )
+        matrix = pipe_result.panel.to_dataframe()
+        edge_pipeline_meta = pipeline_meta_for_edges(pipe_result)
+        logger.info(
+            "Pipeline {} 完成：残差面板 {}×{}",
+            recipe_id,
+            matrix.shape[0],
+            matrix.shape[1],
+        )
+    else:
+        edge_pipeline_meta = {"recipe_id": recipe_id, "pipeline_recipe": {"recipe_id": recipe_id}}
+
     parsed = parse_windows(windows)
     window_results = [
         calc.compute_window(
@@ -146,6 +171,7 @@ def build_relationships(
         return report
 
     # 正式落库
+    # pipeline_recipe 无独立列：记在边 meta / finish_run.stats，勿传入 ORM 构造
     run_id = repos.relation.start_run({
         "calc_date": calc_date, "relation_type": relation_type,
         "windows": list(windows), "pool_code": pool_code_db,
@@ -161,15 +187,26 @@ def build_relationships(
         for wr in window_results:
             repos.relation.replace_snapshot(relation_type, wr.window)
             records = []
+            from quant_system.similarity.protocol import enrich_pearson_pair
+
             for p in wr.pairs:
                 a, b = p["code_a"], p["code_b"]
                 ind_a, ind_b = ind_map.get(a), ind_map.get(b)
+                sim = enrich_pearson_pair(
+                    p["value"],
+                    p["sample_size"],
+                    wr.window,
+                    extra_meta={"pipeline": edge_pipeline_meta},
+                )
                 records.append({
                     "relation_type": relation_type, "window": wr.window,
                     "stock_code_a": a, "stock_code_b": b,
-                    "relation_value": p["value"], "sample_size": p["sample_size"],
-                    "direction": 0,
+                    "relation_value": sim.score, "sample_size": sim.sample_size,
+                    "direction": sim.direction,
                     "is_same_industry": bool(ind_a and ind_b and ind_a == ind_b),
+                    "confidence": round(sim.confidence, 4),
+                    "breakdown_json": sim.breakdown,
+                    "meta_json": sim.meta,
                     "calc_date": calc_date, "created_at": now,
                 })
             written = repos.relation.bulk_insert(records)
@@ -188,6 +225,8 @@ def build_relationships(
             "pair_written": total_written,
             "code_hash": hash_directory(Path(__file__).resolve().parent, "*.py"),
             "duration_ms": report.duration_ms,
+            "pipeline_recipe": recipe_id,
+            "pipeline": edge_pipeline_meta,
         })
         logger.info(
             "关系计算完成 {} {}：宇宙 {} 只，写入 {} 行，耗时 {}ms",

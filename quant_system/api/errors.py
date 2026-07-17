@@ -20,6 +20,10 @@ def raise_bad_request(message: str) -> None:
     raise ApiError("BAD_REQUEST", message, status_code=400)
 
 
+def raise_conflict(message: str) -> None:
+    raise ApiError("CONFLICT", message, status_code=409)
+
+
 async def api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,

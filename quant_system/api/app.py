@@ -9,7 +9,18 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from quant_system.api.errors import ApiError, api_error_handler, http_error_handler
-from quant_system.api.routers import health, jobs, meta, patterns, reports, signals, stocks, system
+from quant_system.api.routers import (
+    clusters,
+    definitions,
+    health,
+    jobs,
+    meta,
+    patterns,
+    reports,
+    signals,
+    stocks,
+    system,
+)
 
 
 def create_app(*, mount_frontend: bool | None = None) -> FastAPI:
@@ -22,6 +33,21 @@ def create_app(*, mount_frontend: bool | None = None) -> FastAPI:
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
     )
+
+    @app.on_event("startup")
+    def _ensure_pattern_defs() -> None:
+        """补表 + seed Pattern Definition（幂等）。"""
+        try:
+            from quant_system.database.migrations import ensure_schema_columns
+            from quant_system.infra.db import session_scope
+            from quant_system.patterns.store import ensure_seeded
+
+            ensure_schema_columns()
+            with session_scope() as session:
+                ensure_seeded(session)
+        except Exception:
+            # 启动时 DB 不可用不阻断；扫描时 registry 会回退 seed
+            pass
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -41,6 +67,9 @@ def create_app(*, mount_frontend: bool | None = None) -> FastAPI:
         health.router,
         meta.router,
         stocks.router,
+        clusters.router,
+        # definitions 必须在 patterns 之前，避免 /patterns/{id} 吃掉 /definitions
+        definitions.router,
         patterns.router,
         signals.router,
         reports.router,

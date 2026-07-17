@@ -5,6 +5,24 @@ import { api, type PatternEval, type WindowRange } from "@/api/client";
 import { KlineChart } from "@/components/KlineChart";
 import { RelationList, RelationMiniList } from "@/components/RelationList";
 
+/** 特征得分配色：>=80 达标绿 / 40~80 及格黄 / <40 偏差红 */
+function simColor(sim: number | undefined): string {
+  if (sim == null || Number.isNaN(sim)) return "var(--text-muted, #94a3b8)";
+  if (sim >= 80) return "#0f766e";
+  if (sim >= 40) return "#ca8a04";
+  return "#b42318";
+}
+
+function fmtEvalValue(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return "—";
+    return Number.isInteger(v) ? String(v) : v.toFixed(4);
+  }
+  if (typeof v === "boolean") return v ? "是" : "否";
+  return String(v);
+}
+
 export function StockPage() {
   const { code = "" } = useParams();
   const [params] = useSearchParams();
@@ -48,6 +66,16 @@ export function StockPage() {
       }),
     enabled: !!code,
   });
+  const clusterProfile = relWindow === "W250" ? "pearson_w250" : "pearson_w60";
+  const clusterQ = useQuery({
+    queryKey: ["stock-cluster", code, clusterProfile],
+    queryFn: () => api.stockCluster(code, clusterProfile, 24),
+    enabled: !!code,
+  });
+  const clusterHref =
+    clusterQ.data?.cluster_id != null
+      ? `/clusters?profile=${clusterProfile}&cluster=${clusterQ.data.cluster_id}`
+      : `/clusters?profile=${clusterProfile}`;
 
   useEffect(() => {
     if (!date && snapshot.data?.trade_date) setDate(snapshot.data.trade_date);
@@ -85,6 +113,26 @@ export function StockPage() {
 
   const latestFeat = features.data?.[features.data.length - 1];
 
+  // Pattern 评估的逐特征明细：合并 值(metrics_values) 与 得分(feature_similarity)
+  const evalFeatureRows = useMemo(() => {
+    if (!evalResult) return [];
+    const sims = evalResult.feature_similarity || {};
+    const values = (evalResult.metrics_values || {}) as Record<string, unknown>;
+    const hard = new Set(evalResult.hard_failed || []);
+    const keys = Array.from(new Set([...Object.keys(sims), ...Object.keys(values)])).sort();
+    return keys.map((key) => {
+      const dot = key.indexOf(".");
+      return {
+        key,
+        stage: dot > 0 ? key.slice(0, dot) : "",
+        name: dot > 0 ? key.slice(dot + 1) : key,
+        value: values[key],
+        sim: sims[key] as number | undefined,
+        hardFailed: hard.has(key),
+      };
+    });
+  }, [evalResult]);
+
   return (
     <>
       <div className="page-head">
@@ -96,6 +144,17 @@ export function StockPage() {
             {detail.data?.industry_name || "—"}
             {detail.data?.is_st ? " · ST" : ""}
             {detail.data?.list_date ? ` · 上市 ${detail.data.list_date}` : ""}
+            {clusterQ.data?.cluster_id != null ? (
+              <>
+                {" · "}
+                <Link className="cluster-badge" to={clusterHref} title="查看所属相关簇">
+                  簇 {clusterQ.data.label}
+                  <span className="mono muted">
+                    #{clusterQ.data.rank_in_cluster}/{clusterQ.data.size}
+                  </span>
+                </Link>
+              </>
+            ) : null}
           </p>
         </div>
         <div className="toolbar">
@@ -185,26 +244,86 @@ export function StockPage() {
                   {!evalResult && <p className="muted">点击上方按钮进行现场评估</p>}
                   {evalResult && (
                     <>
-                      <p>
+                      <p style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
                         <span className={`badge ${evalResult.matched ? "ok" : "fail"}`}>
                           {evalResult.matched ? "MATCHED" : "MISS"}
-                        </span>{" "}
-                        <span className="mono">
-                          {evalResult.similarity.toFixed(2)} / {evalResult.threshold}
                         </span>
+                        <span className="mono">
+                          相似度 {evalResult.similarity.toFixed(2)} / 阈值 {evalResult.threshold}
+                        </span>
+                        <span className="muted mono">距离 {evalResult.distance.toFixed(4)}</span>
+                        <span className="muted mono">{evalResult.version}</span>
                       </p>
-                      <pre className="mono" style={{ fontSize: 12 }}>
-                        {JSON.stringify(
-                          {
-                            windows: evalResult.chosen_window_ranges,
-                            stage: evalResult.stage_similarity,
-                            hard_failed: evalResult.hard_failed,
-                            reasons: evalResult.reasons,
-                          },
-                          null,
-                          2,
-                        )}
-                      </pre>
+
+                      <div className="eval-chips">
+                        {Object.entries(evalResult.stage_similarity || {}).map(([stage, sim]) => (
+                          <span className="eval-chip" key={stage}>
+                            {stage}
+                            <b style={{ color: simColor(sim) }}>{sim.toFixed(1)}</b>
+                          </span>
+                        ))}
+                      </div>
+
+                      {evalResult.hard_failed.length > 0 && (
+                        <p className="eval-hardfail">
+                          硬约束失败：{evalResult.hard_failed.join("、")}
+                        </p>
+                      )}
+
+                      {Object.keys(evalResult.chosen_window_ranges || {}).length > 0 && (
+                        <p className="muted mono" style={{ fontSize: "0.78rem", margin: "0 0 0.5rem" }}>
+                          {Object.entries(evalResult.chosen_window_ranges).map(([k, r]) => (
+                            <span key={k} style={{ marginRight: "0.85rem" }}>
+                              {k}={evalResult.chosen_windows?.[k] ?? "?"}d {r.start}~{r.end}
+                            </span>
+                          ))}
+                        </p>
+                      )}
+
+                      {evalFeatureRows.length > 0 ? (
+                        <table className="data eval-metrics">
+                          <thead>
+                            <tr>
+                              <th>指标</th>
+                              <th style={{ textAlign: "right" }}>值</th>
+                              <th style={{ textAlign: "right" }}>得分</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {evalFeatureRows.map((row) => (
+                              <tr key={row.key} className={row.hardFailed ? "is-hardfail" : ""}>
+                                <td>
+                                  <span className="eval-stage-tag">{row.stage}</span>
+                                  {row.name}
+                                  {row.hardFailed && <span className="eval-hf-badge">硬约束</span>}
+                                </td>
+                                <td className="mono" style={{ textAlign: "right" }}>
+                                  {fmtEvalValue(row.value)}
+                                </td>
+                                <td
+                                  className="mono"
+                                  style={{ textAlign: "right", color: simColor(row.sim), fontWeight: 600 }}
+                                >
+                                  {row.sim == null ? "—" : row.sim.toFixed(1)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p className="muted">未进入特征评分（硬约束/历史不足等已拦截）</p>
+                      )}
+
+                      {evalResult.reasons.length > 0 && (
+                        <details className="eval-reasons">
+                          <summary className="muted">评估说明 ({evalResult.reasons.length})</summary>
+                          <ul>
+                            {evalResult.reasons.map((r, i) => (
+                              <li key={i} className="mono">{r}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
                     </>
                   )}
                 </>
@@ -327,14 +446,61 @@ export function StockPage() {
             </div>
           </div>
           <div className="panel">
-            <div className="panel-head">窗口高亮</div>
-            <div style={{ padding: "0.75rem 1rem" }}>
-              {ranges ? (
-                <pre className="mono" style={{ margin: 0, fontSize: 12 }}>
-                  {JSON.stringify(ranges, null, 2)}
-                </pre>
-              ) : (
-                <span className="muted">评估后显示 platform / breakout 区间</span>
+            <div className="panel-head">
+              所属相关簇 · {relWindow}
+              {clusterQ.data?.cluster_id != null ? (
+                <Link className="btn" to={clusterHref} style={{ marginLeft: "auto", fontSize: "0.78rem" }}>
+                  打开簇
+                </Link>
+              ) : null}
+            </div>
+            <div style={{ padding: "0.4rem 0.75rem 0.75rem" }}>
+              {clusterQ.isLoading && <span className="muted">加载中…</span>}
+              {!clusterQ.isLoading && clusterQ.data?.cluster_id == null && (
+                <span className="muted">暂无簇归属，请先跑 similarity.refresh</span>
+              )}
+              {clusterQ.data?.cluster_id != null && (
+                <>
+                  <p style={{ margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
+                    <Link to={clusterHref}>{clusterQ.data.label}</Link>
+                    <span className="muted">
+                      {" "}
+                      · 排名 #{clusterQ.data.rank_in_cluster} / {clusterQ.data.size}
+                    </span>
+                  </p>
+                  <div className="rel-mini-row is-self">
+                    <span>
+                      <span className="mono">{code}</span>
+                      <span className="muted"> {detail.data?.name || "当前"}</span>
+                    </span>
+                    <span className="mono muted">
+                      {clusterQ.data.centrality != null
+                        ? clusterQ.data.centrality.toFixed(2)
+                        : "—"}
+                    </span>
+                  </div>
+                  {clusterQ.data.peers.map((p) => {
+                    const href = date
+                      ? `/stocks/${p.code}?date=${date}`
+                      : `/stocks/${p.code}`;
+                    return (
+                      <div key={p.code} className="rel-mini-row">
+                        <Link to={href}>
+                          <span className="mono">{p.code}</span>
+                          <span className="muted"> {p.name}</span>
+                        </Link>
+                        <span className="mono muted">{p.centrality.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                  {clusterQ.data.size > clusterQ.data.peers.length + 1 ? (
+                    <p className="muted" style={{ margin: "0.5rem 0 0", fontSize: "0.8rem" }}>
+                      <Link to={clusterHref}>
+                        查看全部 {clusterQ.data.size} 只成员 →
+                      </Link>
+                    </p>
+                  ) : null}
+                </>
               )}
             </div>
           </div>
@@ -358,6 +524,18 @@ export function StockPage() {
               查看全部关联
             </button>
           ) : null}
+          <div className="panel">
+            <div className="panel-head">窗口高亮</div>
+            <div style={{ padding: "0.75rem 1rem" }}>
+              {ranges ? (
+                <pre className="mono" style={{ margin: 0, fontSize: 12 }}>
+                  {JSON.stringify(ranges, null, 2)}
+                </pre>
+              ) : (
+                <span className="muted">评估后显示 platform / breakout 区间</span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </>

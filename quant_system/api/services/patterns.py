@@ -6,8 +6,9 @@ from typing import Any
 from quant_system.api.errors import raise_bad_request, raise_not_found
 from quant_system.data.repository import Repositories
 from quant_system.patterns.context import build_pattern_context
+from quant_system.patterns.definition import PatternDefinition
 from quant_system.patterns.matcher import GenericPatternMatcher
-from quant_system.patterns.registry import PATTERN_REGISTRY, get_definitions
+from quant_system.patterns.registry import get_definitions, get_registry
 
 
 def list_pattern_meta() -> list[dict[str, Any]]:
@@ -19,7 +20,7 @@ def list_pattern_meta() -> list[dict[str, Any]]:
             "threshold": p.threshold,
             "description": p.description,
         }
-        for p in PATTERN_REGISTRY.values()
+        for p in get_registry().values()
     ]
 
 
@@ -77,7 +78,7 @@ def top_hits(
     limit: int | None = 20,
 ) -> list[dict[str, Any]]:
     pid = pattern_id.strip().upper()
-    if pid not in PATTERN_REGISTRY:
+    if pid not in get_registry():
         raise_bad_request(f"未知 Pattern: {pid}")
     d = trade_date or repos.abnormal.latest_trade_date()
     if d is None:
@@ -113,19 +114,14 @@ def pattern_stats(repos: Repositories, trade_date: date | None) -> dict[str, Any
     return {"trade_date": d, "stats": repos.abnormal.stats(d)}
 
 
-def eval_pattern(
+def eval_with_definition(
     repos: Repositories,
+    definition: PatternDefinition,
     *,
     code: str,
     trade_date: date | None,
-    pattern_id: str,
 ) -> dict[str, Any]:
     code = code.upper()
-    pid = pattern_id.strip().upper()
-    definitions = get_definitions([pid])
-    if not definitions:
-        raise_bad_request(f"未知 Pattern: {pid}")
-    definition = definitions[0]
     from quant_system.infra import trading_calendar as tc
 
     d = trade_date or tc.latest_trading_day()
@@ -165,4 +161,77 @@ def eval_pattern(
         "hard_failed": result.hard_failed or [],
         "reasons": result.reasons or [],
         "metrics_values": (result.metrics or {}).get("values") or {},
+    }
+
+
+def eval_pattern(
+    repos: Repositories,
+    *,
+    code: str,
+    trade_date: date | None,
+    pattern_id: str,
+) -> dict[str, Any]:
+    pid = pattern_id.strip().upper()
+    definitions = get_definitions([pid])
+    if not definitions:
+        raise_bad_request(f"未知 Pattern: {pid}")
+    return eval_with_definition(
+        repos, definitions[0], code=code, trade_date=trade_date
+    )
+
+
+def dry_scan_with_definition(
+    repos: Repositories,
+    definition: PatternDefinition,
+    *,
+    trade_date: date,
+    limit: int = 50,
+    progress_cb: Any | None = None,
+) -> dict[str, Any]:
+    """用指定 Definition 全市场试扫，不落库。"""
+    from quant_system.patterns.runner import PatternRunner, rank_records
+
+    if progress_cb:
+        progress_cb(0.15, f"loading context {trade_date.isoformat()}")
+    max_bars = definition.required_history_bars()
+    context = build_pattern_context(repos, trade_date, max_bars=max_bars)
+    if progress_cb:
+        progress_cb(0.35, "matching…")
+    run = PatternRunner(keep_unmatched=False, show_progress=False).run(
+        definition, trade_date, context
+    )
+    records = rank_records(run.results)
+    if progress_cb:
+        progress_cb(0.85, "ranking hits")
+    hits: list[dict[str, Any]] = []
+    for i, record in enumerate(records[:limit]):
+        code = record["code"]
+        stock = repos.stock.get_stock(code)
+        components = record.get("score_components") or {}
+        metrics = components.get("metrics") or {}
+        ranges = components.get("chosen_window_ranges") or metrics.get("chosen_window_ranges")
+        hits.append(
+            {
+                "rank": i + 1,
+                "trade_date": trade_date.isoformat(),
+                "code": code,
+                "name": stock.name if stock else "",
+                "pattern_id": definition.id,
+                "pattern_score": float(record["pattern_score"]),
+                "chosen_windows": components.get("chosen_windows") or {},
+                "chosen_window_ranges": _parse_ranges(ranges) or {},
+                "stage_similarity": components.get("stage_similarity") or {},
+                "hard_failed": list(metrics.get("hard_failed") or []),
+            }
+        )
+    return {
+        "trade_date": trade_date.isoformat(),
+        "pattern_id": definition.id,
+        "version": definition.version,
+        "threshold": definition.threshold,
+        "universe_size": int(context.get("universe_size", 0)),
+        "matched_count": int(run.stats.get("matched_count", 0)),
+        "limit": limit,
+        "hits": hits,
+        "persisted": False,
     }

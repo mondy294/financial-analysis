@@ -558,9 +558,12 @@ class SQLARelationRepository(_BaseSQLARepo, RelationRepository):
         return self._upsert_batch(StockRelationship, rows, self._PK)
 
     def start_run(self, record: dict) -> int:
+        record = dict(record)
         record.setdefault("created_at", datetime.utcnow())
         record.setdefault("status", "RUNNING")
-        obj = StockRelationshipRun(**record)
+        # 忽略模型未声明字段（如 pipeline_recipe），避免 kwargs 炸构造
+        allowed = {c.key for c in StockRelationshipRun.__table__.columns}
+        obj = StockRelationshipRun(**{k: v for k, v in record.items() if k in allowed})
         self._session.add(obj)
         self._session.flush()
         return int(obj.id)
@@ -581,6 +584,7 @@ class SQLARelationRepository(_BaseSQLARepo, RelationRepository):
             obj.pair_written = stats.get("pair_written")
             obj.code_hash = stats.get("code_hash")
             obj.duration_ms = stats.get("duration_ms")
+            # pipeline_recipe 等扩展字段：表无 params_json，完整快照在边 meta_json
         self._session.flush()
 
     def has_success_run(self, calc_date: date, relation_type: str) -> bool:

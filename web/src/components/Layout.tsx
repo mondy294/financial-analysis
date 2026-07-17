@@ -6,6 +6,8 @@ import { api } from "@/api/client";
 const NAV = [
   { to: "/", label: "工作台", end: true },
   { to: "/patterns", label: "Pattern" },
+  { to: "/strategies", label: "策略" },
+  { to: "/clusters", label: "相关簇" },
   { to: "/patterns/eval", label: "评估" },
   { to: "/signals", label: "选股" },
   { to: "/reports", label: "日报" },

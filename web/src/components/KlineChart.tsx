@@ -90,6 +90,23 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
 
+const UP_COLOR = "#c2410c";
+const DOWN_COLOR = "#0f766e";
+
+function fmtPrice(n: number): string {
+  return n.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function fmtVolume(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  if (n >= 1e8) return `${(n / 1e8).toFixed(2)} 亿`;
+  if (n >= 1e4) return `${(n / 1e4).toFixed(2)} 万`;
+  return n.toLocaleString("zh-CN");
+}
+
 function buildVisibleRange(rightIndex: number, visibleCount: number): LogicalRange {
   const to = (rightIndex + RIGHT_PAD) as Logical;
   const from = (Number(to) - visibleCount) as Logical;
@@ -110,6 +127,8 @@ export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
   const [visibleCount, setVisibleCount] = useState(() => defaultVisibleCount("day"));
   /** 窗口右端对应的 bar 下标；默认最新一根 */
   const [rightIndex, setRightIndex] = useState(0);
+  /** 鼠标悬停的 bar 下标；null 表示未悬停（浮层展示最新一根） */
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const [overlays, setOverlays] = useState<Record<OverlayKey, boolean>>({
     ma5: true,
@@ -259,6 +278,19 @@ export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
         close: b.close,
       })),
     );
+
+    // 悬停浮层：把 crosshair 命中的时间映射回 bar 下标
+    const timeIndex = new Map<string, number>();
+    bars.forEach((b, i) => timeIndex.set(b.trade_date, i));
+    main.subscribeCrosshairMove((param) => {
+      const t = param.time as string | undefined;
+      if (!t) {
+        setHoverIdx(null);
+        return;
+      }
+      const idx = timeIndex.get(t);
+      setHoverIdx(idx === undefined ? null : idx);
+    });
 
     const vol = main.addHistogramSeries({
       priceFormat: { type: "volume" },
@@ -499,6 +531,33 @@ export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
     return `${bars[left]?.trade_date ?? "—"} → ${bars[ri]?.trade_date ?? "—"}`;
   }, [bars, rightIndex, visibleCount, lastIdx]);
 
+  // 悬停浮层信息：未悬停时展示最新一根
+  const hoverInfo = useMemo(() => {
+    if (!bars.length) return null;
+    const valid =
+      hoverIdx !== null && hoverIdx >= 0 && hoverIdx < bars.length ? hoverIdx : null;
+    const idx = valid ?? lastIdx;
+    const bar = bars[idx];
+    if (!bar) return null;
+    const prevClose = idx > 0 ? bars[idx - 1].close : bar.open;
+    const change = bar.close - prevClose;
+    const changePct = prevClose ? (change / prevClose) * 100 : 0;
+    const amplitude = prevClose ? ((bar.high - bar.low) / prevClose) * 100 : 0;
+    return {
+      isHover: valid !== null,
+      date: bar.trade_date,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      volume: bar.volume,
+      change,
+      changePct,
+      amplitude,
+      up: change >= 0,
+    };
+  }, [bars, hoverIdx, lastIdx]);
+
   return (
     <div className="chart-stack">
       <div className="chart-toolbar">
@@ -548,7 +607,52 @@ export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
         </div>
       </div>
 
-      <div className="chart-box chart-main" ref={mainRef} />
+      <div className="chart-main-wrap" style={{ position: "relative" }}>
+        {hoverInfo && (
+          <div className="kline-legend">
+            <span className="kline-legend-date">
+              {hoverInfo.date}
+              {!hoverInfo.isHover && <span className="kline-legend-tag">最新</span>}
+            </span>
+            <span className="kline-legend-item">
+              <i>开</i>
+              {fmtPrice(hoverInfo.open)}
+            </span>
+            <span className="kline-legend-item">
+              <i>高</i>
+              {fmtPrice(hoverInfo.high)}
+            </span>
+            <span className="kline-legend-item">
+              <i>低</i>
+              {fmtPrice(hoverInfo.low)}
+            </span>
+            <span className="kline-legend-item">
+              <i>收</i>
+              <b style={{ color: hoverInfo.up ? UP_COLOR : DOWN_COLOR }}>
+                {fmtPrice(hoverInfo.close)}
+              </b>
+            </span>
+            <span
+              className="kline-legend-item"
+              style={{ color: hoverInfo.up ? UP_COLOR : DOWN_COLOR }}
+            >
+              <i>涨跌</i>
+              {hoverInfo.up ? "+" : ""}
+              {fmtPrice(hoverInfo.change)} ({hoverInfo.up ? "+" : ""}
+              {hoverInfo.changePct.toFixed(2)}%)
+            </span>
+            <span className="kline-legend-item">
+              <i>振幅</i>
+              {hoverInfo.amplitude.toFixed(2)}%
+            </span>
+            <span className="kline-legend-item">
+              <i>量</i>
+              {fmtVolume(hoverInfo.volume)}
+            </span>
+          </div>
+        )}
+        <div className="chart-box chart-main" ref={mainRef} />
+      </div>
 
       <div className="chart-nav">
         <div className="chart-nav-btns">

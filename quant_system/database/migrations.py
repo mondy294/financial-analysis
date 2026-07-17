@@ -116,6 +116,13 @@ def seed_initial_data(session: Session) -> None:
                 version="v1.0", is_active=True,
             ))
 
+    # Pattern Definition（RANGE_BREAKOUT 等）
+    from quant_system.patterns.store import ensure_seeded
+
+    seeded = ensure_seeded(session)
+    for pid in seeded:
+        logger.debug("seed pattern_definition: {}", pid)
+
     session.flush()
     logger.info("种子数据写入完成")
 
@@ -158,6 +165,20 @@ def ensure_schema_columns(engine: Engine | None = None) -> list[str]:
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE daily_feature ADD COLUMN {name} {typ}"))
                     added.append(f"daily_feature.{name}")
+
+    # stock_relationship：Similarity Framework 协议字段
+    rel_cols = {
+        "confidence": "NUMERIC(5,4)",
+        "breakdown_json": "JSON",
+        "meta_json": "JSON",
+    }
+    if "stock_relationship" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("stock_relationship")}
+        with engine.begin() as conn:
+            for name, typ in rel_cols.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE stock_relationship ADD COLUMN {name} {typ}"))
+                    added.append(f"stock_relationship.{name}")
 
     # 新表仍靠 create_all
     Base.metadata.create_all(engine)
