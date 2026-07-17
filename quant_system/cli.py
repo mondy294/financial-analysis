@@ -1131,7 +1131,7 @@ def relationship_stats_cmd(
 
 
 # ============================================================================
-# abnormal 子命令组（Pattern Engine）
+# abnormal 子命令组（Pattern Similarity Framework）
 # ============================================================================
 
 @abnormal_app.command("scan")
@@ -1141,9 +1141,9 @@ def abnormal_scan_cmd(
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
     force: Annotated[bool, typer.Option("--force")] = False,
 ) -> None:
-    """跑异动 Pattern Engine（分模式扫描 + 模式内排名）。"""
-    from quant_system.abnormal.registry import PATTERN_REGISTRY
-    from quant_system.abnormal.service import build_abnormal
+    """跑形态相似度扫描（Prototype -> Similarity -> Pattern Rank）。"""
+    from quant_system.patterns.registry import PATTERN_REGISTRY
+    from quant_system.patterns.service import build_patterns
     from quant_system.data.repository import build_repositories
     from quant_system.database.migrations import ensure_schema_columns
     from quant_system.infra.db import session_scope
@@ -1153,13 +1153,13 @@ def abnormal_scan_cmd(
     d = _parse_date(trade_date)
     pids = [x.strip().upper() for x in patterns.split(",")] if patterns else None
     mode = "[yellow]DRY-RUN[/yellow]" if dry_run else "[bold]SCAN[/bold]"
-    console.print(f"{mode} abnormal → {d} patterns={pids or list(PATTERN_REGISTRY)}")
+    console.print(f"{mode} pattern scan → {d} patterns={pids or list(PATTERN_REGISTRY)}")
 
     with session_scope() as session:
         repos = build_repositories(session)
-        job_id = None if dry_run else repos.job_log.start_job("abnormal.scan", d)
+        job_id = None if dry_run else repos.job_log.start_job("pattern.scan", d)
         try:
-            report = build_abnormal(
+            report = build_patterns(
                 repos, trade_date=d, pattern_ids=pids, dry_run=dry_run, force=force,
             )
             if job_id is not None:
@@ -1182,22 +1182,113 @@ def abnormal_scan_cmd(
 
     table = Table(title=f"abnormal · {d} · 宇宙 {report.universe_size} · median={report.market_median_return}")
     table.add_column("pattern")
-    table.add_column("L1/L2/L3", justify="right")
     table.add_column("命中", justify="right")
+    table.add_column("写入", justify="right")
     table.add_column("Top1", justify="left")
     for pr in report.per_pattern:
-        lv = "/".join(str(pr.level_stats.get(f"L{i}", 0)) for i in (1, 2, 3))
         top1 = ""
-        if pr.hits:
-            h = pr.hits[0]
-            top1 = f"{h.code} L{h.scan_level} {h.pattern_score:.0f}"
-        table.add_row(pr.display_name, lv, str(len(pr.hits)), top1)
+        if pr.top_hits:
+            h = pr.top_hits[0]
+            top1 = f"{h['code']} sim={h['pattern_score']:.1f}"
+        table.add_row(pr.display_name, str(pr.matched_count), str(pr.written), top1)
     console.print(table)
     console.print(f"耗时 {report.duration_ms}ms  params={report.params_version}")
     if dry_run:
         console.print("[dim]dry-run 未落库；正式跑去掉 --dry-run[/dim]")
     else:
-        console.print("查看: [cyan]qs abnormal top --all[/cyan] / [cyan]qs abnormal show <代码>[/cyan]")
+        console.print(
+            "查看: [cyan]qs abnormal top --all[/cyan] / "
+            "[cyan]qs abnormal show <代码>[/cyan] / "
+            "[cyan]qs abnormal eval <代码> --date YYYY-MM-DD[/cyan]"
+        )
+
+
+def _fmt_metric_num(value: object) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)):
+        v = float(value)
+        if abs(v) >= 100:
+            return f"{v:.2f}"
+        if abs(v) >= 1:
+            return f"{v:.4f}"
+        return f"{v:.6f}"
+    return str(value)
+
+
+def _extract_feature_rows(components: dict) -> list[tuple[str, object, object]]:
+    """从 score_components 抽出 (feature, value, sim)。"""
+    feat_sim = components.get("feature_similarity") or {}
+    metrics = components.get("metrics") or {}
+    values = metrics.get("values") if isinstance(metrics, dict) else None
+    if values is None:
+        snap = components.get("inputs_snapshot") or {}
+        values = snap.get("values") if isinstance(snap, dict) else {}
+    values = values or {}
+    keys = sorted(set(feat_sim) | set(values))
+    return [(k, values.get(k), feat_sim.get(k)) for k in keys]
+
+
+def _window_range_label(components: dict, stage: str, length: object) -> str:
+    """长度 + 起止交易日，如 10d 2026-07-01~2026-07-14。"""
+    ranges = components.get("chosen_window_ranges")
+    if not ranges:
+        metrics = components.get("metrics") or {}
+        if isinstance(metrics, dict):
+            ranges = metrics.get("chosen_window_ranges")
+    if not ranges:
+        snap = components.get("inputs_snapshot") or {}
+        if isinstance(snap, dict):
+            ranges = snap.get("chosen_window_ranges")
+    rng = (ranges or {}).get(stage) or {}
+    base = f"{length}d" if length is not None else "-"
+    start, end = rng.get("start"), rng.get("end")
+    if start and end:
+        return f"{base} {start}~{end}"
+    return base
+
+
+def _print_pattern_metrics(
+    components: dict,
+    *,
+    title: str,
+) -> None:
+    """打印 stage / window / 各特征 value+similarity。"""
+    stages = components.get("stage_similarity") or {}
+    windows = components.get("chosen_windows") or {}
+    if stages or windows:
+        head = Table(title=title, show_header=True)
+        head.add_column("stage")
+        head.add_column("window")
+        head.add_column("sim", justify="right")
+        stage_names = list(dict.fromkeys([*windows.keys(), *stages.keys()]))
+        for name in stage_names:
+            win = windows.get(name)
+            sim = stages.get(name)
+            head.add_row(
+                name,
+                _window_range_label(components, name, win),
+                f"{float(sim):.1f}" if sim is not None else "-",
+            )
+        console.print(head)
+
+    rows = _extract_feature_rows(components)
+    if not rows:
+        console.print("[dim]无特征明细（可能是旧扫描结果，请重新 qs abnormal scan）[/dim]")
+        return
+    table = Table(show_header=True, title="features")
+    table.add_column("feature")
+    table.add_column("value", justify="right")
+    table.add_column("sim", justify="right")
+    for name, value, sim in rows:
+        table.add_row(
+            name,
+            _fmt_metric_num(value),
+            f"{float(sim):.1f}" if sim is not None else "-",
+        )
+    console.print(table)
 
 
 @abnormal_app.command("top")
@@ -1206,9 +1297,13 @@ def abnormal_top_cmd(
     all_patterns: Annotated[bool, typer.Option("--all", help="打印全部 Pattern 榜")] = False,
     limit: Annotated[int, typer.Option("--limit")] = 10,
     trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+    detail: Annotated[
+        bool,
+        typer.Option("--detail/--compact", help="展开每只股票的特征 value/sim；默认展开"),
+    ] = True,
 ) -> None:
-    """查看某模式 TopN（或 --all 全部模式）。"""
-    from quant_system.abnormal.registry import PATTERN_REGISTRY
+    """查看某模式相似度 TopN（或 --all 全部模式）。"""
+    from quant_system.patterns.registry import PATTERN_REGISTRY
     from quant_system.data.repository import build_repositories
     from quant_system.infra.db import session_scope
 
@@ -1236,28 +1331,158 @@ def abnormal_top_cmd(
             table.add_column("#", justify="right")
             table.add_column("code")
             table.add_column("name")
-            table.add_column("L", justify="right")
-            table.add_column("score", justify="right")
+            table.add_column("sim", justify="right")
+            table.add_column("dist", justify="right")
             table.add_column("reasons")
             if not rows:
                 console.print(f"[dim]{name}: 今日无命中[/dim]")
                 continue
             for r in rows:
+                components = r.get("score_components") or {}
                 table.add_row(
                     str(r["pattern_rank"]), r["code"], names.get(r["code"], ""),
-                    str(r["scan_level"]), f"{r['pattern_score']:.1f}",
+                    f"{r['pattern_score']:.1f}",
+                    f"{float(components.get('distance', 0.0)):.3f}",
                     " · ".join(r["reasons"][:4]),
                 )
             console.print(table)
+            if detail:
+                for r in rows:
+                    components = r.get("score_components") or {}
+                    # 兼容旧数据：values 可能只在 inputs_snapshot
+                    if "inputs_snapshot" not in components and r.get("inputs_snapshot"):
+                        components = {
+                            **components,
+                            "inputs_snapshot": r["inputs_snapshot"],
+                        }
+                    title = (
+                        f"#{r['pattern_rank']} {r['code']} "
+                        f"{names.get(r['code'], '')} · metrics"
+                    )
+                    _print_pattern_metrics(components, title=title)
+
+
+@abnormal_app.command("eval")
+def abnormal_eval_cmd(
+    code: Annotated[str, typer.Argument(help="股票代码，如 001258.SZ")],
+    trade_date: Annotated[Optional[str], typer.Option("--date", help="asof 交易日；默认最近交易日")] = None,
+    pattern: Annotated[
+        Optional[str],
+        typer.Option("--pattern", help="Pattern ID；默认 RANGE_BREAKOUT"),
+    ] = "RANGE_BREAKOUT",
+    detail: Annotated[
+        bool,
+        typer.Option("--detail/--compact", help="展开特征 value/sim；默认展开"),
+    ] = True,
+) -> None:
+    """用当前 Definition 对单票现场重算（不落库，不受历史 scan 结果限制）。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.infra.db import session_scope
+    from quant_system.patterns.context import build_pattern_context
+    from quant_system.patterns.matcher import GenericPatternMatcher
+    from quant_system.patterns.registry import PATTERN_REGISTRY, get_definitions
+
+    _boot()
+    code = code.strip().upper()
+    d = _parse_date(trade_date)
+    pid = (pattern or "RANGE_BREAKOUT").strip().upper()
+    definitions = get_definitions([pid])
+    if not definitions:
+        console.print(f"[red]未知 Pattern: {pid}；可选 {list(PATTERN_REGISTRY)}[/red]")
+        raise typer.Exit(code=1)
+    definition = definitions[0]
+
+    with session_scope() as session:
+        repos = build_repositories(session)
+        ctx = build_pattern_context(
+            repos,
+            d,
+            codes=[code],
+            max_bars=definition.required_history_bars(),
+        )
+        series = ctx["kline_by_code"].get(code)
+        if series is None or series.empty:
+            console.print(f"[yellow]{code} 在 {d} 无可用 K 线[/yellow]")
+            raise typer.Exit(code=1)
+        stock = repos.stock.get_stock(code)
+        name = stock.name if stock else ""
+        result = GenericPatternMatcher().match(
+            code,
+            d,
+            series,
+            definition,
+            meta=ctx["stock_meta"].get(code, {}),
+            last_amount=ctx["amount_by_code"].get(code),
+        )
+
+    status = "[green]MATCHED[/green]" if result.matched else "[red]NOT MATCHED[/red]"
+    console.print(
+        f"{status}  {code} {name}  ·  {definition.display_name}({definition.id})  ·  {d}"
+    )
+    summary = Table(show_header=True)
+    summary.add_column("field")
+    summary.add_column("value")
+    summary.add_row("similarity", f"{result.similarity:.2f}")
+    summary.add_row("threshold", f"{definition.threshold:.2f}")
+    summary.add_row("distance", f"{result.distance:.4f}")
+    summary.add_row("version", definition.version)
+    ranges = (result.metrics or {}).get("chosen_window_ranges") or {}
+    if result.chosen_windows:
+        win_bits = []
+        for k, v in result.chosen_windows.items():
+            rng = ranges.get(k) or {}
+            if rng.get("start") and rng.get("end"):
+                win_bits.append(f"{k}={v}d {rng['start']}~{rng['end']}")
+            else:
+                win_bits.append(f"{k}={v}d")
+        summary.add_row("windows", ", ".join(win_bits))
+    else:
+        summary.add_row("windows", "-")
+    summary.add_row(
+        "stage_sim",
+        ", ".join(f"{k}={v:.1f}" for k, v in (result.stage_similarity or {}).items()) or "-",
+    )
+    summary.add_row("hard_failed", ", ".join(result.hard_failed) if result.hard_failed else "-")
+    summary.add_row("reasons", " · ".join(result.reasons[:6]) if result.reasons else "-")
+    console.print(summary)
+
+    if detail:
+        has_features = bool(result.feature_similarity) or bool(
+            (result.metrics or {}).get("values")
+        )
+        if not has_features:
+            console.print("[dim]未进入特征评分（硬约束/历史不足等已拦截）[/dim]")
+        else:
+            components = {
+                "distance": result.distance,
+                "stage_similarity": result.stage_similarity,
+                "feature_similarity": result.feature_similarity,
+                "chosen_windows": result.chosen_windows,
+                "chosen_window_ranges": (result.metrics or {}).get("chosen_window_ranges"),
+                "metrics": result.metrics,
+                "inputs_snapshot": {
+                    "chosen_windows": result.chosen_windows,
+                    "chosen_window_ranges": (result.metrics or {}).get("chosen_window_ranges"),
+                    "values": (result.metrics or {}).get("values"),
+                },
+            }
+            _print_pattern_metrics(
+                components,
+                title=f"{code} · {definition.display_name} · live metrics",
+            )
 
 
 @abnormal_app.command("show")
 def abnormal_show_cmd(
     code: Annotated[str, typer.Argument()],
     trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
+    detail: Annotated[
+        bool,
+        typer.Option("--detail/--compact", help="展开特征 value/sim；默认展开"),
+    ] = True,
 ) -> None:
-    """查看某只股票命中了哪些 Pattern。"""
-    from quant_system.abnormal.registry import PATTERN_REGISTRY
+    """查看某只股票命中了哪些 Pattern（历史 scan 落库结果）。"""
+    from quant_system.patterns.registry import PATTERN_REGISTRY
     from quant_system.data.repository import build_repositories
     from quant_system.infra.db import session_scope
 
@@ -1271,26 +1496,39 @@ def abnormal_show_cmd(
         return
     table = Table(title=f"{code} · 异动命中")
     table.add_column("pattern")
-    table.add_column("L")
     table.add_column("rank", justify="right")
-    table.add_column("score", justify="right")
+    table.add_column("sim", justify="right")
+    table.add_column("dist", justify="right")
     table.add_column("reasons")
     for r in rows:
         meta = PATTERN_REGISTRY.get(r["pattern_id"])
         name = meta.display_name if meta else r["pattern_id"]  # type: ignore[attr-defined]
+        components = r.get("score_components") or {}
         table.add_row(
-            name, str(r["scan_level"]), str(r["pattern_rank"]),
-            f"{r['pattern_score']:.1f}", " · ".join(r["reasons"][:5]),
+            name, str(r["pattern_rank"]),
+            f"{r['pattern_score']:.1f}", f"{float(components.get('distance', 0.0)):.3f}",
+            " · ".join(r["reasons"][:5]),
         )
     console.print(table)
+    if detail:
+        for r in rows:
+            meta = PATTERN_REGISTRY.get(r["pattern_id"])
+            name = meta.display_name if meta else r["pattern_id"]  # type: ignore[attr-defined]
+            components = r.get("score_components") or {}
+            if "inputs_snapshot" not in components and r.get("inputs_snapshot"):
+                components = {
+                    **components,
+                    "inputs_snapshot": r["inputs_snapshot"],
+                }
+            _print_pattern_metrics(components, title=f"{code} · {name} · metrics")
 
 
 @abnormal_app.command("stats")
 def abnormal_stats_cmd(
     trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
 ) -> None:
-    """各 Pattern × Scan Level 命中漏斗。"""
-    from quant_system.abnormal.registry import PATTERN_REGISTRY
+    """各 Pattern 当日命中统计。"""
+    from quant_system.patterns.registry import PATTERN_REGISTRY
     from quant_system.data.repository import build_repositories
     from quant_system.infra.db import session_scope
 
@@ -1304,14 +1542,12 @@ def abnormal_stats_cmd(
         stats = repos.abnormal.stats(d)
     table = Table(title=f"abnormal stats · {d}")
     table.add_column("pattern")
-    table.add_column("L1", justify="right")
-    table.add_column("L2", justify="right")
-    table.add_column("L3", justify="right")
+    table.add_column("hits", justify="right")
     for pid, meta in PATTERN_REGISTRY.items():
         s = stats.get(pid, {})
         table.add_row(
             meta.display_name,  # type: ignore[attr-defined]
-            str(s.get("L1", 0)), str(s.get("L2", 0)), str(s.get("L3", 0)),
+            str(s.get("L1", 0)),
         )
     console.print(table)
 

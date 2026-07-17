@@ -1004,16 +1004,19 @@ class SQLAAbnormalRepository(_BaseSQLARepo, AbnormalRepository):
 
     @staticmethod
     def _hit_dict(o: AbnormalSignal) -> dict:
+        score_components = o.score_components or {}
         return {
             "trade_date": o.trade_date,
             "code": o.code,
             "pattern_id": o.pattern_id,
             "scan_level": o.scan_level,
             "pattern_score": float(o.pattern_score),
+            "similarity": float(o.pattern_score),
+            "distance": float(score_components.get("distance", 0.0)),
             "pattern_rank": o.pattern_rank,
             "reasons": o.reasons or [],
             "risk_flags": o.risk_flags or [],
-            "score_components": o.score_components,
+            "score_components": score_components,
             "inputs_snapshot": o.inputs_snapshot,
         }
 

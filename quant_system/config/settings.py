@@ -320,6 +320,13 @@ class AIConfig(BaseModel):
     thinking_enabled: bool = True                  # 是否启用 thinking 模式
 
 
+class PatternConfig(BaseModel):
+    """形态扫描配置。"""
+    # 按股票并行匹配的线程数；1 = 关闭并发
+    # 环境变量：QS_PATTERN__CONCURRENCY
+    concurrency: int = 4
+
+
 # ============ 顶层 Settings ============
 
 class Settings(BaseSettings):
@@ -359,6 +366,7 @@ class Settings(BaseSettings):
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
+    pattern: PatternConfig = Field(default_factory=PatternConfig)
     # v2 策略新增
     hard_filter: HardFilterConfig = Field(default_factory=HardFilterConfig)
     resonance: ResonanceConfig = Field(default_factory=ResonanceConfig)
