@@ -137,6 +137,8 @@ class HardConstraints:
     exclude_st: bool = True
     min_list_days: int | None = 120
     min_amount: float | None = 2.0e8
+    # 总市值下限，单位与 stock_basic.market_cap 一致：亿元；None=不限制
+    min_market_cap: float | None = None
     allow_suspended: bool = False
 
 

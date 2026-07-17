@@ -77,6 +77,110 @@ def _boot():
 # 顶层
 # ============================================================================
 
+@app.command("serve")
+def serve_cmd(
+    host: Annotated[str, typer.Option("--host")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port")] = 8000,
+    reload: Annotated[
+        bool,
+        typer.Option("--reload/--no-reload", help="后端热重载（改 quant_system/*.py 自动重启）"),
+    ] = False,
+    frontend: Annotated[
+        bool,
+        typer.Option("--frontend/--no-frontend", help="同时启动 Vite 前端（HMR，默认 :5173）"),
+    ] = False,
+    dev: Annotated[
+        bool,
+        typer.Option("--dev", help="开发模式：等价于 --reload --frontend"),
+    ] = False,
+    vite_port: Annotated[int, typer.Option("--vite-port", help="Vite 开发服务器端口")] = 5173,
+) -> None:
+    """启动 Web Console（FastAPI）。开发请用 `qs serve --dev`（后端 reload + 前端 HMR）。"""
+    import atexit
+    import os
+    import shutil
+    import signal
+    import subprocess
+    from pathlib import Path
+
+    _boot()
+    try:
+        import uvicorn
+    except ImportError as exc:
+        console.print("[red]缺少 uvicorn/fastapi，请执行: pip install -e '.[api]'[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if dev:
+        reload = True
+        frontend = True
+
+    root = Path(__file__).resolve().parents[1]
+    pkg_dir = Path(__file__).resolve().parent
+    web_dir = root / "web"
+    vite_proc: subprocess.Popen | None = None
+
+    if frontend:
+        if not (web_dir / "package.json").exists():
+            console.print(f"[red]未找到前端目录: {web_dir}[/red]")
+            raise typer.Exit(code=1)
+        npm = shutil.which("npm")
+        if not npm:
+            console.print("[red]未找到 npm，无法启动前端 HMR[/red]")
+            raise typer.Exit(code=1)
+        if not (web_dir / "node_modules").exists():
+            console.print("[yellow]web/node_modules 不存在，正在 npm install…[/yellow]")
+            subprocess.run([npm, "install"], cwd=web_dir, check=True)
+
+        # 开发时不要挂载旧的 web/dist，避免和 Vite 混淆
+        os.environ["QS_SERVE_MOUNT_FRONTEND"] = "0"
+        env = os.environ.copy()
+        env["VITE_API_PROXY"] = f"http://{host}:{port}"
+        vite_proc = subprocess.Popen(
+            [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", str(vite_port)],
+            cwd=web_dir,
+            env=env,
+        )
+
+        def _stop_vite() -> None:
+            if vite_proc is None or vite_proc.poll() is not None:
+                return
+            vite_proc.send_signal(signal.SIGTERM)
+            try:
+                vite_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                vite_proc.kill()
+
+        atexit.register(_stop_vite)
+
+    console.print(f"[bold]API[/bold]      → http://{host}:{port}")
+    console.print(f"API docs  → http://{host}:{port}/api/docs")
+    if frontend:
+        console.print(f"[bold]前端 HMR[/bold] → http://127.0.0.1:{vite_port}  （请用这个地址开发）")
+    elif (web_dir / "dist" / "index.html").exists():
+        console.print(f"[bold]静态 UI[/bold] → http://{host}:{port}  （无 HMR，改前端请用 --dev）")
+    if reload:
+        console.print("[dim]后端热重载已开启：监听 quant_system/[/dim]")
+
+    try:
+        uvicorn.run(
+            "quant_system.api.app:create_app",
+            factory=True,
+            host=host,
+            port=port,
+            reload=reload,
+            reload_dirs=[str(pkg_dir)] if reload else None,
+            reload_includes=["*.py"] if reload else None,
+        )
+    finally:
+        if vite_proc is not None:
+            if vite_proc.poll() is None:
+                vite_proc.send_signal(signal.SIGTERM)
+                try:
+                    vite_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    vite_proc.kill()
+
+
 @app.command("init-db")
 def init_db_cmd(
     drop_first: Annotated[bool, typer.Option("--drop-first")] = False,
@@ -1299,10 +1403,13 @@ def abnormal_top_cmd(
     trade_date: Annotated[Optional[str], typer.Option("--date")] = None,
     detail: Annotated[
         bool,
-        typer.Option("--detail/--compact", help="展开每只股票的特征 value/sim；默认展开"),
-    ] = True,
+        typer.Option(
+            "--detail/--compact",
+            help="--detail 展开每只股票的特征 value/sim/窗口；默认 --compact 只打榜单",
+        ),
+    ] = False,
 ) -> None:
-    """查看某模式相似度 TopN（或 --all 全部模式）。"""
+    """查看某模式相似度 TopN（或 --all 全部模式）。默认只打榜单，加 --detail 看指标明细。"""
     from quant_system.patterns.registry import PATTERN_REGISTRY
     from quant_system.data.repository import build_repositories
     from quant_system.infra.db import session_scope

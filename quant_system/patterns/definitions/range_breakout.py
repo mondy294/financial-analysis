@@ -49,7 +49,7 @@ def build_range_breakout_definition() -> PatternDefinition:
     # ------------------------------------------------------------------
     platform = Stage(
         name="platform",
-        window=WindowConstraint(min_length=3, max_length=7),
+        window=WindowConstraint(min_length=4, max_length=10),
         targets={
             # 箱体高度：(high_max - low_min) / low_min
             "amplitude": TargetValue(
@@ -64,7 +64,6 @@ def build_range_breakout_definition() -> PatternDefinition:
             # 形纯度：直线拟合 R²；货架状横盘应较高
             "linearity": TargetValue(
                 ideal=0.85, tolerance=0.30, weight=0.18, mode="one_sided_high",
-                hard_min=0.70,
             ),
             # 相对窗内高点：close_last/high_max - 1；打掉“长窗吃进前高再阴跌”
             "close_vs_window_high": TargetValue(
@@ -204,7 +203,7 @@ def build_range_breakout_definition() -> PatternDefinition:
             attach_to_stage="breakout",
             stage_map={"platform": "platform", "breakout": "breakout"},
             target=TargetValue(
-                ideal=1.7, tolerance=1.0, weight=0.18, mode="one_sided_high",
+                ideal=1.7, tolerance=1.0, weight=0.5, mode="one_sided_high",hard_min=1.7,
             ),
         ),
         # break_hold_ratio = 突破段中 close >= platform.high_max 的天数占比
@@ -236,21 +235,21 @@ def build_range_breakout_definition() -> PatternDefinition:
     context_features = [
         # price_position@252：一年高低区间位置 [0,1]
         # 硬约束：必须 <= 0.23（回溯期低位）
-        ContextSpec(
-            name="price_position",
-            lookback_bars=252,
-            target=TargetValue(
-                ideal=0.23, tolerance=0.20, weight=1.0, mode="one_sided_low",
-                hard_max=0.23,
-            ),
-        ),
+        # ContextSpec(
+        #     name="price_position",
+        #     lookback_bars=252,
+        #     target=TargetValue(
+        #         ideal=0.23, tolerance=0.20, weight=1.0, mode="one_sided_low",
+        #         hard_max=0.23,
+        #     ),
+        # ),
     ]
 
     return PatternDefinition(
         id="RANGE_BREAKOUT",
-        version="tl-v2.4",
+        version="tl-v2.5",
         display_name="横盘突破",
-        description="窄箱近水平货架后突破；平台用正交几何防冲高回落假窗，且一年价位<=0.23。",
+        description="窄箱近水平货架后突破；平台用正交几何防冲高回落假窗，一年价位<=0.23，市值>=500亿。",
         timeline=[platform, breakout],
         # overall similarity >= 72 才算 matched
         threshold=70.0,
@@ -266,5 +265,7 @@ def build_range_breakout_definition() -> PatternDefinition:
             min_list_days=120,
             # 不做绝对成交额门槛（流动性用相对量能特征表达）
             min_amount=None,
+            # 总市值下限（亿元，同 stock_basic.market_cap）；改数即可，None=不限
+            min_market_cap=None,
         ),
     )

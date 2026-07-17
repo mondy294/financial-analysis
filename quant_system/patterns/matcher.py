@@ -328,6 +328,12 @@ class GenericPatternMatcher:
             amount = float(last_amount or 0.0)
             if amount < constraints.min_amount:
                 return "amount_too_low"
+        if constraints.min_market_cap is not None:
+            mcap = meta.get("market_cap")
+            if mcap is None:
+                return "market_cap_missing"
+            if float(mcap) < float(constraints.min_market_cap):
+                return "market_cap_too_low"
         if constraints.min_list_days is not None and meta.get("list_date") is not None:
             age = (trade_date - meta["list_date"]).days
             if age < constraints.min_list_days:

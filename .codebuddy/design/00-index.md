@@ -14,7 +14,7 @@
 | 8 | [08-strategy-v2-layered-selection.md](./08-strategy-v2-layered-selection.md) | 策略 v2：分层门控 + 多策略共振 + regime 感知（v1.2 定稿） | 🚧 阶段 A 待落地 |
 | 9 | [09-stock-relationship-engine.md](./09-stock-relationship-engine.md) | Stock Relationship Layer：收益率 Pearson + 阈值落库 + Lead-Lag | 🚧 已部分落地 |
 | 10 | [10-abnormal-detector.md](./10-abnormal-detector.md) | Pattern Template Matching v2：可变窗口 + RelationFeature + Extractor/Evaluator 分离 | 🚧 已部分落地（RANGE_BREAKOUT） |
-| 11 | [11-web-console.md](./11-web-console.md) | Web Console：FastAPI + SPA，Pattern/股票详情/选股日报只读操作 | 📝 设计稿待评审 |
+| 11 | [11-web-console.md](./11-web-console.md) | Web Console：FastAPI + SPA，Pattern/股票详情/选股日报只读操作 | ✅ V1 已实现 |
 | 12 | *待交付* | 回测 + 调度 | 🕐 未开始 |
 
 ## 用户核心约束（贯穿所有阶段）

@@ -892,7 +892,7 @@ class AbnormalRepository(Protocol):
     ) -> None: ...
     def has_success_run(self, trade_date: date, params_version: str) -> bool: ...
     def top_by_pattern(
-        self, trade_date: date, pattern_id: str, limit: int = 10,
+        self, trade_date: date, pattern_id: str, limit: int | None = 10,
     ) -> list[dict]: ...
     def hits_of(self, code: str, trade_date: Optional[date] = None) -> list[dict]: ...
     def stats(self, trade_date: date) -> dict: ...
@@ -957,7 +957,10 @@ class SQLAAbnormalRepository(_BaseSQLARepo, AbnormalRepository):
         return self._session.scalars(stmt).first() is not None
 
     def top_by_pattern(
-        self, trade_date: date, pattern_id: str, limit: int = 10,
+        self,
+        trade_date: date,
+        pattern_id: str,
+        limit: int | None = 10,
     ) -> list[dict]:
         stmt = (
             select(AbnormalSignal)
@@ -965,9 +968,13 @@ class SQLAAbnormalRepository(_BaseSQLARepo, AbnormalRepository):
                 AbnormalSignal.trade_date == trade_date,
                 AbnormalSignal.pattern_id == pattern_id,
             )
-            .order_by(AbnormalSignal.pattern_rank.asc())
-            .limit(limit)
+            .order_by(
+                AbnormalSignal.pattern_score.desc(),
+                AbnormalSignal.pattern_rank.asc(),
+            )
         )
+        if limit is not None and limit > 0:
+            stmt = stmt.limit(limit)
         return [self._hit_dict(o) for o in self._session.scalars(stmt).all()]
 
     def hits_of(self, code: str, trade_date: Optional[date] = None) -> list[dict]:

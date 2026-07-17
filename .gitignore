@@ -13,7 +13,7 @@ dist/
 # ============ 虚拟环境 ============
 .venv/
 venv/
-env/
+# env/
 .python-version
 
 # ============ IDE ============
@@ -54,3 +54,7 @@ scripts/probe_*.py
 # ============ Jupyter ============
 .ipynb_checkpoints/
 *.ipynb
+
+# ============ Web Console ============
+web/node_modules/
+web/dist/

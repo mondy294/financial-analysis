@@ -39,8 +39,10 @@ kaleido>=0.2.1                  # plotly 静态导出
 tenacity>=8.3.0                 # 重试装饰器（akshare 抖动用）
 diskcache>=5.6.0                # 磁盘缓存
 
+# --- Web Console ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+
 # --- 可选，未来启用 ---
-# fastapi>=0.111.0
-# uvicorn>=0.30.0
 # faiss-cpu>=1.8.0
 # chromadb>=0.5.0

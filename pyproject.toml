@@ -37,6 +37,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "alembic>=1.13.0",
     "openai>=1.30.0",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +50,7 @@ dev = [
     "ruff>=0.5.0",
     "mypy>=1.10.0",
 ]
-api = ["fastapi>=0.111.0", "uvicorn>=0.30.0"]
+api = ["fastapi>=0.111.0", "uvicorn[standard]>=0.30.0"]
 vector = ["faiss-cpu>=1.8.0", "chromadb>=0.5.0"]
 
 [project.scripts]

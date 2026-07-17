@@ -5,12 +5,12 @@ from decimal import Decimal
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from quant_system.config.settings import get_settings
 from quant_system.data.repository import Repositories
 from quant_system.data_quality.checker import get_blacklist_for_selector
-from quant_system.database.models import DailyKline, StockBasic
+from quant_system.database.models import DailyKline, DailyValuation, StockBasic
 from quant_system.infra.board import filter_codes
 
 
@@ -99,7 +99,8 @@ def build_pattern_context(
             if pc is not None and not pd.isna(pc):
                 returns.append(float(pc) / 100.0)
 
-    meta = _load_stock_meta(session, list(kline_by_code.keys()))
+    codes = list(kline_by_code.keys())
+    meta = _load_stock_meta(session, codes, as_of=trade_date)
     # 剔除 ST（约束层还会再查，这里先收窄宇宙）
     for code, m in list(meta.items()):
         if m.get("is_st") and code in kline_by_code:
@@ -120,15 +121,52 @@ def build_pattern_context(
     }
 
 
-def _load_stock_meta(session: Any, codes: list[str]) -> dict[str, dict[str, Any]]:
+def _load_stock_meta(
+    session: Any,
+    codes: list[str],
+    *,
+    as_of: date | None = None,
+) -> dict[str, dict[str, Any]]:
     if not codes:
         return {}
-    stmt = select(StockBasic.code, StockBasic.name, StockBasic.is_st, StockBasic.list_date).where(
-        StockBasic.code.in_(codes)
-    )
+    stmt = select(
+        StockBasic.code,
+        StockBasic.name,
+        StockBasic.is_st,
+        StockBasic.list_date,
+        StockBasic.market_cap,
+    ).where(StockBasic.code.in_(codes))
     out: dict[str, dict[str, Any]] = {}
-    for code, name, is_st, list_date in session.execute(stmt).all():
-        out[str(code)] = {"name": name, "is_st": bool(is_st), "list_date": list_date}
+    for code, name, is_st, list_date, market_cap in session.execute(stmt).all():
+        out[str(code)] = {
+            "name": name,
+            "is_st": bool(is_st),
+            "list_date": list_date,
+            # 单位：亿元；优先用 daily_valuation 覆盖（见下）
+            "market_cap": float(market_cap) if market_cap is not None else None,
+        }
+
+    # stock_basic.market_cap 经常为空；日频估值表才是可靠来源（亿元）
+    val_date = as_of
+    if val_date is None:
+        val_date = session.scalar(select(func.max(DailyValuation.trade_date)))
+    if val_date is not None:
+        # 若 as_of 当天没有估值，回退到 <= as_of 的最近一日
+        day = session.scalar(
+            select(func.max(DailyValuation.trade_date)).where(
+                DailyValuation.trade_date <= val_date
+            )
+        )
+        if day is not None:
+            vstmt = select(DailyValuation.code, DailyValuation.market_cap).where(
+                DailyValuation.trade_date == day,
+                DailyValuation.code.in_(codes),
+                DailyValuation.market_cap.is_not(None),
+            )
+            for code, market_cap in session.execute(vstmt).all():
+                key = str(code)
+                if key in out:
+                    out[key]["market_cap"] = float(market_cap)
     return out
 
 

@@ -233,7 +233,7 @@ def test_generic_matcher_finds_range_breakout() -> None:
         trade_date,
         series,
         definition,
-        meta={"is_st": False, "list_date": date(2010, 1, 1)},
+        meta={"is_st": False, "list_date": date(2010, 1, 1), "market_cap": 100.0},
         last_amount=5.0e8,
     )
     assert result.similarity > 50
@@ -281,7 +281,7 @@ def test_context_hard_fail_skips_window_search() -> None:
         trade_date,
         series,
         definition,
-        meta={"is_st": False, "list_date": date(2010, 1, 1)},
+        meta={"is_st": False, "list_date": date(2010, 1, 1), "market_cap": 100.0},
         last_amount=5.0e8,
     )
     assert result.matched is False
@@ -308,7 +308,7 @@ def test_hard_target_blocks_match_even_if_score_high() -> None:
         trade_date,
         series,
         definition,
-        meta={"is_st": False, "list_date": date(2010, 1, 1)},
+        meta={"is_st": False, "list_date": date(2010, 1, 1), "market_cap": 100.0},
         last_amount=5.0e8,
     )
     assert result.matched is False
@@ -324,7 +324,7 @@ def test_window_search_prefers_better_fit() -> None:
         trade_date,
         series,
         definition,
-        meta={"is_st": False, "list_date": date(2010, 1, 1)},
+        meta={"is_st": False, "list_date": date(2010, 1, 1), "market_cap": 100.0},
         last_amount=5.0e8,
     )
     assert result.chosen_windows["breakout"] in {1, 2}

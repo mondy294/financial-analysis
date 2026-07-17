@@ -243,7 +243,8 @@ class AkshareStockProvider:
         out["code"] = df["代码"].astype(str).apply(_normalize_code)
         out["name"] = df["名称"].astype(str)
         out["is_st"] = out["name"].str.contains("ST", na=False)
-        out["market_cap"] = pd.to_numeric(df["总市值"], errors="coerce")
+        # 东财「总市值」单位为元 → 统一成亿元（与 valuation / HardConstraints.min_market_cap 一致）
+        out["market_cap"] = pd.to_numeric(df["总市值"], errors="coerce") / 1e8
         return out
 
     def _name_list_from_sina(self) -> pd.DataFrame:
@@ -313,8 +314,10 @@ class AkshareStockProvider:
             if df_spot is None or df_spot.empty:
                 return empty
             cap_map = {
-                _normalize_code(str(row.get("代码", ""))): pd.to_numeric(
-                    row.get("总市值"), errors="coerce"
+                _normalize_code(str(row.get("代码", ""))): (
+                    None
+                    if pd.isna(pd.to_numeric(row.get("总市值"), errors="coerce"))
+                    else float(pd.to_numeric(row.get("总市值"), errors="coerce")) / 1e8
                 )
                 for _, row in df_spot.iterrows()
             }
