@@ -1,9 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type PatternHit } from "@/api/client";
+import { JobProgress } from "@/components/JobProgress";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200] as const;
+const DEFAULT_PATTERN = "RANGE_BREAKOUT";
+const DEFAULT_PAGE_SIZE = 20;
 
 function formatRanges(hit: PatternHit): string {
   const ranges = hit.chosen_window_ranges;
@@ -38,24 +41,53 @@ function PageSizeSelect({
   );
 }
 
+function parsePageSize(raw: string | null): number {
+  const n = Number(raw || DEFAULT_PAGE_SIZE);
+  return (PAGE_SIZE_OPTIONS as readonly number[]).includes(n) ? n : DEFAULT_PAGE_SIZE;
+}
+
 export function PatternsPage() {
   const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
   const meta = useQuery({ queryKey: ["trading-day"], queryFn: api.tradingDay });
   const patterns = useQuery({ queryKey: ["patterns-meta"], queryFn: api.patternsMeta });
-  const [patternId, setPatternId] = useState("RANGE_BREAKOUT");
-  const [date, setDate] = useState("");
+
+  const patternId = params.get("pattern") || DEFAULT_PATTERN;
+  const date = params.get("date") || "";
+  const page = Math.max(1, Number(params.get("page") || "1") || 1);
+  const pageSize = parsePageSize(params.get("pageSize"));
+
   const [jobId, setJobId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+
+  const patchParams = (updates: Record<string, string | null>) => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [k, v] of Object.entries(updates)) {
+          if (v == null || v === "") next.delete(k);
+          else next.set(k, v);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   useEffect(() => {
-    if (!date && meta.data?.pattern_latest_date) {
-      setDate(meta.data.pattern_latest_date);
-    } else if (!date && meta.data?.latest_trading_day) {
-      setDate(meta.data.latest_trading_day);
-    }
+    if (date) return;
+    const d = meta.data?.pattern_latest_date || meta.data?.latest_trading_day;
+    if (d) patchParams({ date: d });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta.data, date]);
+
+  // 无 query 时补上默认 pattern，便于分享/返回时 URL 完整
+  useEffect(() => {
+    if (!params.get("pattern")) {
+      patchParams({ pattern: patternId });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const stats = useQuery({
     queryKey: ["pattern-stats", date],
@@ -82,13 +114,30 @@ export function PatternsPage() {
   }, [ranked, safePage, pageSize]);
 
   useEffect(() => {
-    setPage(1);
     setExpanded(null);
   }, [patternId, date, pageSize]);
 
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
+    if (page > totalPages) patchParams({ page: String(totalPages) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, totalPages]);
+
+  const listReturnPath = useMemo(() => {
+    const q = new URLSearchParams();
+    q.set("pattern", patternId);
+    if (date) q.set("date", date);
+    if (safePage > 1) q.set("page", String(safePage));
+    if (pageSize !== DEFAULT_PAGE_SIZE) q.set("pageSize", String(pageSize));
+    return `/patterns?${q.toString()}`;
+  }, [patternId, date, safePage, pageSize]);
+
+  const stockHref = (code: string, tradeDate: string, evalTab = false) => {
+    const q = new URLSearchParams();
+    q.set("date", tradeDate);
+    if (evalTab) q.set("eval", "1");
+    q.set("return", listReturnPath);
+    return `/stocks/${code}?${q.toString()}`;
+  };
 
   const scan = useMutation({
     mutationFn: (force: boolean) =>
@@ -106,9 +155,14 @@ export function PatternsPage() {
     enabled: !!jobId,
     refetchInterval: (q) => {
       const s = q.state.data?.status;
-      return s === "PENDING" || s === "RUNNING" ? 1500 : false;
+      return s === "PENDING" || s === "RUNNING" ? 600 : false;
     },
   });
+
+  const scanRunning =
+    scan.isPending ||
+    job.data?.status === "PENDING" ||
+    job.data?.status === "RUNNING";
 
   useEffect(() => {
     if (job.data?.status === "SUCCESS") {
@@ -130,12 +184,19 @@ export function PatternsPage() {
         <div className="toolbar">
           <label>
             交易日
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => patchParams({ date: e.target.value, page: null })}
+            />
           </label>
           <label>
             Pattern
-            <select value={patternId} onChange={(e) => setPatternId(e.target.value)}>
-              {(patterns.data || [{ id: "RANGE_BREAKOUT", display_name: "RANGE_BREAKOUT" }]).map(
+            <select
+              value={patternId}
+              onChange={(e) => patchParams({ pattern: e.target.value, page: null })}
+            >
+              {(patterns.data || [{ id: DEFAULT_PATTERN, display_name: DEFAULT_PATTERN }]).map(
                 (p) => (
                   <option key={p.id} value={p.id}>
                     {p.display_name} ({p.id})
@@ -144,19 +205,27 @@ export function PatternsPage() {
               )}
             </select>
           </label>
-          <PageSizeSelect value={pageSize} onChange={setPageSize} />
+          <PageSizeSelect
+            value={pageSize}
+            onChange={(n) =>
+              patchParams({
+                pageSize: n === DEFAULT_PAGE_SIZE ? null : String(n),
+                page: null,
+              })
+            }
+          />
           <button
             className="btn primary"
             type="button"
-            disabled={scan.isPending}
+            disabled={scanRunning}
             onClick={() => scan.mutate(false)}
           >
-            扫描
+            {scanRunning ? "扫描中…" : "扫描"}
           </button>
           <button
             className="btn"
             type="button"
-            disabled={scan.isPending}
+            disabled={scanRunning}
             onClick={() => scan.mutate(true)}
           >
             强制重扫
@@ -164,30 +233,12 @@ export function PatternsPage() {
         </div>
       </div>
 
-      {(scan.error || job.data?.error) && (
+      {(scan.error || job.data?.error) && !jobId && (
         <div className="error-box">
           {(scan.error as Error)?.message || job.data?.error}
         </div>
       )}
-      {jobId && (
-        <div className="card" style={{ marginBottom: "1rem" }}>
-          <div className="label">任务 {jobId}</div>
-          <div>
-            <span
-              className={`badge ${
-                job.data?.status === "SUCCESS"
-                  ? "ok"
-                  : job.data?.status === "FAILED"
-                    ? "fail"
-                    : "warn"
-              }`}
-            >
-              {job.data?.status || "…"}
-            </span>{" "}
-            <span className="muted">{job.data?.message}</span>
-          </div>
-        </div>
-      )}
+      <JobProgress jobId={jobId} job={job.data} title="扫描进度" />
 
       <div className="cards">
         <div className="card">
@@ -255,7 +306,7 @@ export function PatternsPage() {
                         >
                           ▾
                         </button>{" "}
-                        <Link to={`/stocks/${r.code}?date=${r.trade_date}`}>
+                        <Link to={stockHref(r.code, r.trade_date)}>
                           <span className="mono">{r.code}</span> {r.name}
                         </Link>
                       </td>
@@ -264,7 +315,7 @@ export function PatternsPage() {
                         {formatRanges(r)}
                       </td>
                       <td className="links-row">
-                        <Link to={`/stocks/${r.code}?date=${r.trade_date}&eval=1`}>详情</Link>
+                        <Link to={stockHref(r.code, r.trade_date, true)}>详情</Link>
                         <Link
                           to={`/patterns/eval?code=${r.code}&date=${r.trade_date}&pattern=${r.pattern_id}`}
                         >
@@ -314,13 +365,21 @@ export function PatternsPage() {
         </div>
         {ranked.length > 0 && (
           <div className="pager">
-            <PageSizeSelect value={pageSize} onChange={setPageSize} />
+            <PageSizeSelect
+              value={pageSize}
+              onChange={(n) =>
+                patchParams({
+                  pageSize: n === DEFAULT_PAGE_SIZE ? null : String(n),
+                  page: null,
+                })
+              }
+            />
             <span className="chart-sep" />
             <button
               type="button"
               className="btn"
               disabled={safePage <= 1}
-              onClick={() => setPage(1)}
+              onClick={() => patchParams({ page: null })}
             >
               首页
             </button>
@@ -328,7 +387,9 @@ export function PatternsPage() {
               type="button"
               className="btn"
               disabled={safePage <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() =>
+                patchParams({ page: safePage <= 2 ? null : String(safePage - 1) })
+              }
             >
               上一页
             </button>
@@ -344,7 +405,7 @@ export function PatternsPage() {
               type="button"
               className="btn"
               disabled={safePage >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => patchParams({ page: String(safePage + 1) })}
             >
               下一页
             </button>
@@ -352,7 +413,7 @@ export function PatternsPage() {
               type="button"
               className="btn"
               disabled={safePage >= totalPages}
-              onClick={() => setPage(totalPages)}
+              onClick={() => patchParams({ page: String(totalPages) })}
             >
               末页
             </button>

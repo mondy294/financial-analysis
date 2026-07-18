@@ -3,7 +3,8 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+import time
+from typing import Any, Callable
 
 from rich.progress import (
     BarColumn,
@@ -18,6 +19,8 @@ from quant_system.patterns.definition import PatternDefinition
 from quant_system.patterns.matcher import GenericPatternMatcher
 from quant_system.patterns.result import PatternMatchResult, PatternRunResult
 
+ProgressCb = Callable[[float, str], None]  # fraction in [0,1] relative to this run, message
+
 
 @dataclass
 class PatternRunner:
@@ -25,6 +28,8 @@ class PatternRunner:
     keep_unmatched: bool = False
     show_progress: bool = True
     concurrency: int | None = None
+    # API/Job 用：按完成比例回调（与 rich 终端条并行可选）
+    progress_cb: ProgressCb | None = None
 
     def __post_init__(self) -> None:
         if self.matcher is None:
@@ -71,6 +76,32 @@ class PatternRunner:
             if result.matched or self.keep_unmatched:
                 results.append(result)
 
+        last_cb_at = 0.0
+        last_cb_done = -1
+
+        def _emit_cb(done: int) -> None:
+            nonlocal last_cb_at, last_cb_done
+            if self.progress_cb is None or total <= 0:
+                return
+            now = time.monotonic()
+            # 节流：至少隔 200ms，或每 1%/50 只，或完成时
+            frac = done / total
+            if (
+                done < total
+                and done != total
+                and done - last_cb_done < max(1, total // 100)
+                and done - last_cb_done < 50
+                and now - last_cb_at < 0.2
+            ):
+                return
+            last_cb_at = now
+            last_cb_done = done
+            label = definition.display_name or definition.id
+            self.progress_cb(
+                frac,
+                f"{label} {done}/{total} hit={matched_count}",
+            )
+
         if self.show_progress and total > 0:
             label = definition.display_name or definition.id
             progress = Progress(
@@ -104,6 +135,7 @@ class PatternRunner:
                         progress.update(
                             task_id, completed=done, idx=done, cur=cur[:18], hit=matched_count,
                         )
+                        _emit_cb(done)
                 else:
                     with ThreadPoolExecutor(max_workers=workers) as pool:
                         futures = {pool.submit(_match_one, code): code for code in codes}
@@ -116,14 +148,23 @@ class PatternRunner:
                             progress.update(
                                 task_id, completed=done, idx=done, cur=cur[:18], hit=matched_count,
                             )
+                            _emit_cb(done)
         else:
+            done = 0
             if workers <= 1:
                 for code in codes:
                     _collect(_match_one(code))
+                    done += 1
+                    _emit_cb(done)
             else:
                 with ThreadPoolExecutor(max_workers=workers) as pool:
-                    for result in pool.map(_match_one, codes):
-                        _collect(result)
+                    futures = {pool.submit(_match_one, code): code for code in codes}
+                    for fut in as_completed(futures):
+                        _collect(fut.result())
+                        done += 1
+                        _emit_cb(done)
+            if total == 0 and self.progress_cb is not None:
+                self.progress_cb(1.0, "宇宙为空，跳过匹配")
 
         results.sort(key=lambda r: (r.similarity, -r.distance), reverse=True)
         return PatternRunResult(

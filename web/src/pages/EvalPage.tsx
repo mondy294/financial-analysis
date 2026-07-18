@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, type PatternEval } from "@/api/client";
+import { EvalMetricsTable } from "@/components/EvalMetricsTable";
 
 export function EvalPage() {
   const [params] = useSearchParams();
   const patterns = useQuery({ queryKey: ["patterns-meta"], queryFn: api.patternsMeta });
   const meta = useQuery({ queryKey: ["trading-day"], queryFn: api.tradingDay });
+  const catalog = useQuery({ queryKey: ["feature-catalog"], queryFn: api.featureCatalog });
   const [code, setCode] = useState(params.get("code") || "");
   const [date, setDate] = useState(params.get("date") || "");
   const [patternId, setPatternId] = useState(params.get("pattern") || "RANGE_BREAKOUT");
@@ -108,58 +110,39 @@ export function EvalPage() {
             </div>
           </div>
 
-          <div className="grid-2">
-            <div className="panel">
-              <div className="panel-head">窗口</div>
-              <div style={{ padding: "0.75rem 1rem" }}>
-                <pre className="mono" style={{ margin: 0, fontSize: 12 }}>
-                  {JSON.stringify(result.chosen_window_ranges, null, 2)}
-                </pre>
-              </div>
-            </div>
-            <div className="panel">
-              <div className="panel-head">Hard failed</div>
-              <div style={{ padding: "0.75rem 1rem" }}>
-                {result.hard_failed.length ? (
-                  <ul className="reason-list">
-                    {result.hard_failed.map((x) => (
-                      <li key={x}>{x}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="muted">无</span>
-                )}
-              </div>
-            </div>
-            <div className="panel">
-              <div className="panel-head">Stage similarity</div>
-              <div style={{ padding: "0.75rem 1rem" }}>
-                <pre className="mono" style={{ margin: 0, fontSize: 12 }}>
-                  {JSON.stringify(result.stage_similarity, null, 2)}
-                </pre>
-              </div>
-            </div>
-            <div className="panel">
-              <div className="panel-head">Feature similarity</div>
-              <div style={{ padding: "0.75rem 1rem" }}>
-                <pre className="mono" style={{ margin: 0, fontSize: 12 }}>
-                  {JSON.stringify(result.feature_similarity, null, 2)}
-                </pre>
-              </div>
-            </div>
-          </div>
-
-          <div className="panel" style={{ marginTop: "0.85rem" }}>
-            <div className="panel-head">Metrics values</div>
+          <div className="panel" style={{ marginBottom: "0.85rem" }}>
+            <div className="panel-head">特征明细</div>
             <div style={{ padding: "0.75rem 1rem" }}>
-              <pre className="mono" style={{ margin: 0, fontSize: 12 }}>
-                {JSON.stringify(result.metrics_values, null, 2)}
-              </pre>
+              {Object.keys(result.chosen_window_ranges || {}).length > 0 && (
+                <p className="muted mono" style={{ fontSize: "0.78rem", margin: "0 0 0.65rem" }}>
+                  {Object.entries(result.chosen_window_ranges || {}).map(([k, r]) => (
+                    <span key={k} style={{ marginRight: "0.85rem" }}>
+                      {k}={result.chosen_windows?.[k] ?? "?"}d {r.start}~{r.end}
+                    </span>
+                  ))}
+                </p>
+              )}
+              {result.hard_failed.length > 0 && (
+                <p className="eval-hardfail" style={{ marginTop: 0 }}>
+                  硬约束失败：{result.hard_failed.join("、")}
+                </p>
+              )}
+              {Object.keys(result.stage_similarity || {}).length > 0 && (
+                <div className="eval-chips" style={{ marginBottom: "0.65rem" }}>
+                  {Object.entries(result.stage_similarity || {}).map(([stage, sim]) => (
+                    <span className="eval-chip" key={stage}>
+                      {stage}
+                      <b>{Number(sim).toFixed(1)}</b>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <EvalMetricsTable result={result} catalog={catalog.data} />
             </div>
           </div>
 
           {result.reasons.length > 0 && (
-            <div className="panel" style={{ marginTop: "0.85rem" }}>
+            <div className="panel">
               <div className="panel-head">Reasons</div>
               <ul className="reason-list" style={{ padding: "0.75rem 1.5rem" }}>
                 {result.reasons.map((r) => (

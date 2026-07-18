@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, type PatternEval, type WindowRange } from "@/api/client";
+import { EvalMetricsTable } from "@/components/EvalMetricsTable";
 import { KlineChart } from "@/components/KlineChart";
 import { RelationList, RelationMiniList } from "@/components/RelationList";
 
@@ -13,19 +14,23 @@ function simColor(sim: number | undefined): string {
   return "#b42318";
 }
 
-function fmtEvalValue(v: unknown): string {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "number") {
-    if (!Number.isFinite(v)) return "—";
-    return Number.isInteger(v) ? String(v) : v.toFixed(4);
+/** 仅允许站内相对路径，防止 open redirect */
+function safeReturnPath(raw: string | null): string | null {
+  if (!raw) return null;
+  let path = raw;
+  try {
+    path = decodeURIComponent(raw);
+  } catch {
+    return null;
   }
-  if (typeof v === "boolean") return v ? "是" : "否";
-  return String(v);
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("://")) return null;
+  return path;
 }
 
 export function StockPage() {
   const { code = "" } = useParams();
   const [params] = useSearchParams();
+  const returnTo = safeReturnPath(params.get("return"));
   const [date, setDate] = useState(params.get("date") || "");
   const [tab, setTab] = useState<"features" | "eval" | "hits" | "relations">("features");
   const [relWindow, setRelWindow] = useState("W60");
@@ -72,6 +77,7 @@ export function StockPage() {
     queryFn: () => api.stockCluster(code, clusterProfile, 24),
     enabled: !!code,
   });
+  const catalog = useQuery({ queryKey: ["feature-catalog"], queryFn: api.featureCatalog });
   const clusterHref =
     clusterQ.data?.cluster_id != null
       ? `/clusters?profile=${clusterProfile}&cluster=${clusterQ.data.cluster_id}`
@@ -113,30 +119,17 @@ export function StockPage() {
 
   const latestFeat = features.data?.[features.data.length - 1];
 
-  // Pattern 评估的逐特征明细：合并 值(metrics_values) 与 得分(feature_similarity)
-  const evalFeatureRows = useMemo(() => {
-    if (!evalResult) return [];
-    const sims = evalResult.feature_similarity || {};
-    const values = (evalResult.metrics_values || {}) as Record<string, unknown>;
-    const hard = new Set(evalResult.hard_failed || []);
-    const keys = Array.from(new Set([...Object.keys(sims), ...Object.keys(values)])).sort();
-    return keys.map((key) => {
-      const dot = key.indexOf(".");
-      return {
-        key,
-        stage: dot > 0 ? key.slice(0, dot) : "",
-        name: dot > 0 ? key.slice(dot + 1) : key,
-        value: values[key],
-        sim: sims[key] as number | undefined,
-        hardFailed: hard.has(key),
-      };
-    });
-  }, [evalResult]);
-
   return (
     <>
       <div className="page-head">
         <div>
+          {returnTo ? (
+            <p style={{ margin: "0 0 0.35rem" }}>
+              <Link to={returnTo} className="muted">
+                ← 返回榜单
+              </Link>
+            </p>
+          ) : null}
           <h1>
             <span className="mono">{code}</span> {detail.data?.name || ""}
           </h1>
@@ -280,39 +273,7 @@ export function StockPage() {
                         </p>
                       )}
 
-                      {evalFeatureRows.length > 0 ? (
-                        <table className="data eval-metrics">
-                          <thead>
-                            <tr>
-                              <th>指标</th>
-                              <th style={{ textAlign: "right" }}>值</th>
-                              <th style={{ textAlign: "right" }}>得分</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {evalFeatureRows.map((row) => (
-                              <tr key={row.key} className={row.hardFailed ? "is-hardfail" : ""}>
-                                <td>
-                                  <span className="eval-stage-tag">{row.stage}</span>
-                                  {row.name}
-                                  {row.hardFailed && <span className="eval-hf-badge">硬约束</span>}
-                                </td>
-                                <td className="mono" style={{ textAlign: "right" }}>
-                                  {fmtEvalValue(row.value)}
-                                </td>
-                                <td
-                                  className="mono"
-                                  style={{ textAlign: "right", color: simColor(row.sim), fontWeight: 600 }}
-                                >
-                                  {row.sim == null ? "—" : row.sim.toFixed(1)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <p className="muted">未进入特征评分（硬约束/历史不足等已拦截）</p>
-                      )}
+                      <EvalMetricsTable result={evalResult} catalog={catalog.data} />
 
                       {evalResult.reasons.length > 0 && (
                         <details className="eval-reasons">

@@ -148,7 +148,16 @@ def build_relationships(
     else:
         edge_pipeline_meta = {"recipe_id": recipe_id, "pipeline_recipe": {"recipe_id": recipe_id}}
 
+    # 读库/Pipeline 已完成：提交读事务，避免后续 Pearson 长 CPU 一直占着 SQLite 锁，
+    # 挡住前端 pattern.scan 的 DELETE/写入。
+    if session is not None:
+        try:
+            session.commit()
+        except Exception:
+            logger.exception("释放 Pipeline 读事务失败（忽略，继续计算）")
+
     parsed = parse_windows(windows)
+    logger.info("开始 Pearson 批算 windows={} universe={}", windows, len(codes))
     window_results = [
         calc.compute_window(
             matrix, label, days,
@@ -157,6 +166,10 @@ def build_relationships(
         )
         for label, days in parsed
     ]
+    logger.info(
+        "Pearson 批算完成：{}",
+        ", ".join(f"{wr.window} pairs={len(wr.pairs)}" for wr in window_results),
+    )
 
     # dry-run：只汇总分布，不建 run、不落库
     if dry_run:

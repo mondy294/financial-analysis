@@ -192,17 +192,25 @@ def dry_scan_with_definition(
     from quant_system.patterns.runner import PatternRunner, rank_records
 
     if progress_cb:
-        progress_cb(0.15, f"loading context {trade_date.isoformat()}")
+        progress_cb(0.08, f"加载上下文 {trade_date.isoformat()}…")
     max_bars = definition.required_history_bars()
     context = build_pattern_context(repos, trade_date, max_bars=max_bars)
+    uni = int(context.get("universe_size") or 0)
     if progress_cb:
-        progress_cb(0.35, "matching…")
-    run = PatternRunner(keep_unmatched=False, show_progress=False).run(
-        definition, trade_date, context
-    )
+        progress_cb(0.15, f"上下文就绪，宇宙 {uni} 只")
+
+    def _match_progress(frac: float, msg: str) -> None:
+        if progress_cb:
+            progress_cb(0.15 + 0.7 * frac, msg)
+
+    run = PatternRunner(
+        keep_unmatched=False,
+        show_progress=False,
+        progress_cb=_match_progress if progress_cb else None,
+    ).run(definition, trade_date, context)
     records = rank_records(run.results)
     if progress_cb:
-        progress_cb(0.85, "ranking hits")
+        progress_cb(0.9, f"排序命中 hit={run.stats.get('matched_count', 0)}")
     hits: list[dict[str, Any]] = []
     for i, record in enumerate(records[:limit]):
         code = record["code"]

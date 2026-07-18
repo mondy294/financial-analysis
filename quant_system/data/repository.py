@@ -905,11 +905,40 @@ class AbnormalRepository(Protocol):
 
 class SQLAAbnormalRepository(_BaseSQLARepo, AbnormalRepository):
     def replace_day(self, trade_date: date, pattern_ids: Optional[list[str]] = None) -> int:
+        import time
+
+        from sqlalchemy.exc import OperationalError
+
         stmt = delete(AbnormalSignal).where(AbnormalSignal.trade_date == trade_date)
         if pattern_ids:
             stmt = stmt.where(AbnormalSignal.pattern_id.in_(pattern_ids))
-        res = self._session.execute(stmt)
-        return int(res.rowcount or 0)
+        last_exc: Exception | None = None
+        for attempt in range(4):
+            try:
+                res = self._session.execute(stmt)
+                return int(res.rowcount or 0)
+            except OperationalError as exc:
+                last_exc = exc
+                msg = str(exc).lower()
+                if "locked" not in msg and "busy" not in msg:
+                    raise
+                if attempt >= 3:
+                    break
+                wait = 2.0 * (attempt + 1)
+                logger.warning(
+                    "abnormal_signal DELETE 遇到 database locked，{}s 后重试 ({}/4)",
+                    wait, attempt + 1,
+                )
+                time.sleep(wait)
+                try:
+                    self._session.rollback()
+                except Exception:
+                    pass
+        assert last_exc is not None
+        raise RuntimeError(
+            "数据库正被其它任务占用（常见：终端里 qs similarity refresh / qs update 仍在写库）。"
+            "请等其结束或停掉后再强制重扫。"
+        ) from last_exc
 
     def bulk_insert(self, records: list[dict]) -> int:
         if not records:

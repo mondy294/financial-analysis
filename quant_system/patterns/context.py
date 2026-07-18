@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+from math import isfinite
 from typing import Any
 
 import pandas as pd
@@ -68,6 +69,7 @@ def build_pattern_context(
             DailyKline.volume,
             DailyKline.amount,
             DailyKline.pct_change,
+            DailyKline.adj_factor,
         )
         .where(DailyKline.code.in_(allowed))
         .where(DailyKline.trade_date >= start)
@@ -77,20 +79,30 @@ def build_pattern_context(
     rows = session.execute(stmt).all()
     hist = pd.DataFrame(
         rows,
-        columns=["code", "trade_date", "open", "high", "low", "close", "volume", "amount", "pct_change"],
+        columns=[
+            "code", "trade_date", "open", "high", "low", "close",
+            "volume", "amount", "pct_change", "adj_factor",
+        ],
     )
     kline_by_code: dict[str, pd.DataFrame] = {}
     amount_by_code: dict[str, float] = {}
     returns: list[float] = []
 
     if not hist.empty:
-        for col in ("open", "high", "low", "close", "volume", "amount", "pct_change"):
+        for col in ("open", "high", "low", "close", "volume", "amount", "pct_change", "adj_factor"):
             hist[col] = pd.to_numeric(hist[col], errors="coerce")
         # 腾讯 amount ≈ 手*均价，换算人民币
         hist["amount"] = hist["amount"] * 100.0
 
         for code, sub in hist.groupby("code", sort=False):
             sub = sub.sort_values("trade_date").tail(max_bars).reset_index(drop=True)
+            # Pattern 几何特征必须用复权价：未复权在除权日会造出假斜率/假振幅。
+            # 前复权（对齐 Web K 线默认 qfq）：以窗口内最新 adj_factor 归一。
+            latest_af = float(sub["adj_factor"].iloc[-1]) if len(sub) else 1.0
+            if latest_af and isfinite(latest_af) and latest_af != 0:
+                ratio = sub["adj_factor"] / latest_af
+                for c in ("open", "high", "low", "close"):
+                    sub[c] = sub[c] * ratio
             kline_by_code[str(code)] = sub[["trade_date", "open", "high", "low", "close", "volume", "amount"]]
             last = sub.iloc[-1]
             amount_by_code[str(code)] = float(last["amount"] or 0.0)

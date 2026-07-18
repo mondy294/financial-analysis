@@ -92,7 +92,12 @@ def run_pattern_scan_job(
     from quant_system.patterns.service import build_patterns
 
     job.message = f"scanning {trade_date.isoformat()}"
-    job.progress = 0.1
+    job.progress = 0.02
+
+    def _progress(p: float, msg: str) -> None:
+        job.progress = max(0.0, min(0.99, float(p)))
+        job.message = msg
+
     with session_scope() as session:
         repos = build_repositories(session)
         report = build_patterns(
@@ -101,9 +106,12 @@ def run_pattern_scan_job(
             pattern_ids=pattern_ids,
             dry_run=False,
             force=force,
+            progress_cb=_progress,
         )
     job.progress = 1.0
-    job.message = "scan finished"
+    job.message = (
+        "已跳过（已有成功扫描）" if report.skipped else "scan finished"
+    )
     job.result = {
         "trade_date": report.trade_date.isoformat(),
         "universe_size": report.universe_size,

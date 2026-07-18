@@ -902,10 +902,15 @@ def similarity_refresh_cmd(
         f"recipe={pipeline_recipe} "
         f"cluster={'off' if no_cluster or dry_run else 'on'}"
     )
-    with session_scope() as session:
-        repos = build_repositories(session)
-        job_id = None if dry_run else repos.job_log.start_job("similarity.refresh", d)
-        try:
+    # job_log 单独短事务：切勿与长耗时 Pearson 共事务，否则会锁死整个 SQLite。
+    job_id = None
+    if not dry_run:
+        with session_scope() as session:
+            job_id = build_repositories(session).job_log.start_job("similarity.refresh", d)
+
+    try:
+        with session_scope() as session:
+            repos = build_repositories(session)
             report = refresh_similarity(
                 repos,
                 session,
@@ -923,17 +928,19 @@ def similarity_refresh_cmd(
                 cluster_conf_min=cluster_conf_min,
                 pipeline_recipe=pipeline_recipe,
             )
-            if job_id is not None:
-                repos.job_log.finish_job(
+        if job_id is not None:
+            with session_scope() as session:
+                build_repositories(session).job_log.finish_job(
                     job_id,
                     "FAILED" if report.error else "SUCCESS",
                     stats=report.to_dict(),
                     error=report.error,
                 )
-        except Exception as e:
-            if job_id is not None:
-                repos.job_log.finish_job(job_id, "FAILED", error=str(e))
-            raise
+    except Exception as e:
+        if job_id is not None:
+            with session_scope() as session:
+                build_repositories(session).job_log.finish_job(job_id, "FAILED", error=str(e))
+        raise
 
     if report.relationship and report.relationship.skipped:
         console.print("[yellow]关系批次已存在（跳过重算边）；聚类仍会执行[/yellow]")

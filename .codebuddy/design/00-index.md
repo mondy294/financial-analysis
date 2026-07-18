@@ -16,7 +16,7 @@
 | 10 | [10-abnormal-detector.md](./10-abnormal-detector.md) | Pattern Template Matching v2：可变窗口 + RelationFeature + Extractor/Evaluator 分离 | 🚧 已部分落地（RANGE_BREAKOUT） |
 | 11 | [11-web-console.md](./11-web-console.md) | Web Console：FastAPI + SPA，Pattern/股票详情/选股日报只读操作 | ✅ V1 已实现 |
 | 12 | [12-pattern-definition-editor.md](./12-pattern-definition-editor.md) | Pattern Definition 可编辑存储 + 策略管理页 | ✅ P0 已落地 |
-| 13 | [13-pattern-outcome-backtest.md](./13-pattern-outcome-backtest.md) | Pattern 事件回测：Entry×Outcome、远期验收打分与综合效果分 | 📝 设计稿待评审 |
+| 13 | [13-pattern-outcome-backtest.md](./13-pattern-outcome-backtest.md) | Event Statistics Engine：发现事件 + 事实指标 + 聚合统计 + 落库（无策略综合分） | 📝 设计稿 v2 待评审 |
 | 14 | [14-stage-role-feature-system.md](./14-stage-role-feature-system.md) | 角色 Stage（横盘/涨/跌）+ 通用/专用分层指标 + 引导式拼装 | ✅ P0 已落地 |
 | 15 | [15-stock-clustering.md](./15-stock-clustering.md) | Cluster Framework：只消费 Graph/Request；与 09 一次编排 | 🚧 P0 已落地（Louvain+API+页） |
 | 16 | [16-market-representation.md](./16-market-representation.md) | Market Representation Framework：Pipeline 中台 + Extractor + Relationship Fusion（[v2](./16-series-transformation.md)/[v1](./16-factor-neutralization.md) 跳转） | 🚧 P0 骨架已落地（Pipeline+ols_selected+refresh 接入） |

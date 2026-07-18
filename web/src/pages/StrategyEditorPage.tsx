@@ -8,6 +8,8 @@ import {
   type PatternEval,
   type TargetValueJson,
 } from "@/api/client";
+import { EvalMetricsTable } from "@/components/EvalMetricsTable";
+import { JobProgress } from "@/components/JobProgress";
 
 type Sel =
   | { kind: "meta" }
@@ -276,7 +278,7 @@ export function StrategyEditorPage() {
     enabled: !!dryJobId,
     refetchInterval: (q) => {
       const s = q.state.data?.status;
-      return s === "SUCCESS" || s === "FAILED" ? false : 800;
+      return s === "SUCCESS" || s === "FAILED" ? false : 600;
     },
   });
 
@@ -928,36 +930,15 @@ export function StrategyEditorPage() {
             >
               在 K 线页打开
             </Link>
-            <table className="data-table" style={{ marginTop: "0.75rem" }}>
-              <thead>
-                <tr>
-                  <th>特征</th>
-                  <th>similarity</th>
-                  <th>value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(evalResult.feature_similarity || {}).map(([k, v]) => (
-                  <tr key={k}>
-                    <td className="mono">{k}</td>
-                    <td>{Number(v).toFixed(1)}</td>
-                    <td className="mono">
-                      {JSON.stringify(evalResult.metrics_values?.[k] ?? "")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ marginTop: "0.75rem" }}>
+              <EvalMetricsTable result={evalResult} catalog={catalog} />
+            </div>
           </div>
         )}
 
         {dbgMode === "scan" && dryJobId && (
           <div style={{ marginTop: "0.75rem" }}>
-            <p className="muted">
-              Job {dryJobId} · {dryJob.data?.status} ·{" "}
-              {Math.round((dryJob.data?.progress || 0) * 100)}% · {dryJob.data?.message}
-            </p>
-            {dryJob.data?.error && <div className="error-box">{dryJob.data.error}</div>}
+            <JobProgress jobId={dryJobId} job={dryJob.data} title="试扫进度" />
             {dryJob.data?.status === "SUCCESS" && dryJob.data.result && (
               <DryHitsTable
                 hits={

@@ -857,6 +857,41 @@ table.data-table tr.row-active {
   margin: 0 0 0.75rem;
 }
 
+.job-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.job-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent, #3b6d9c);
+  transition: width 0.25s ease;
+  min-width: 0;
+}
+
+.job-progress-fill.is-running {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent, #3b6d9c) 75%, #fff),
+    var(--accent, #3b6d9c),
+    color-mix(in srgb, var(--accent, #3b6d9c) 75%, #fff)
+  );
+  background-size: 200% 100%;
+  animation: job-progress-shine 1.2s linear infinite;
+}
+
+@keyframes job-progress-shine {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
 .cluster-badge {
   display: inline-flex;
   align-items: center;
@@ -1298,6 +1333,14 @@ table.data-table tr.row-active {
 .eval-metrics td,
 .eval-metrics th {
   font-variant-numeric: tabular-nums;
+  vertical-align: top;
+}
+
+.eval-feat-desc {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  max-width: 22rem;
+  font-variant-numeric: normal;
 }
 
 .eval-metrics tr.is-hardfail {

@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import time
 
 import numpy as np
 import pandas as pd
+from loguru import logger
 
 # 展示用的绝对值分档阈值
 _HIST_THRESHOLDS = [0.5, 0.6, 0.7, 0.8, 0.9]
@@ -80,10 +82,19 @@ class PearsonCalculator(BaseCalculator):
         codes = list(sub.columns)
         n = len(codes)
         result.universe_effective = n
+        logger.info(
+            "Pearson {}：有效股票 {}，矩阵 {}×{}，开始 corr…",
+            window, n, sub.shape[0], n,
+        )
+        t0 = time.monotonic()
 
         mask = sub.notna().to_numpy()
         corr = sub.corr(method="pearson", min_periods=eff_min).to_numpy()
         samp = mask.astype(np.int32).T @ mask.astype(np.int32)
+        logger.info(
+            "Pearson {}：corr 完成 {:.1f}s，开始筛边…",
+            window, time.monotonic() - t0,
+        )
 
         iu = np.triu_indices(n, k=1)
         v = corr[iu]
@@ -103,6 +114,10 @@ class PearsonCalculator(BaseCalculator):
         pairs, capped = self._apply_cap(codes, ia, ib, vv, ss, max_neighbors)
         result.pairs = pairs
         result.capped = capped
+        logger.info(
+            "Pearson {}：完成 总耗时 {:.1f}s，候选对 {}，写入候选 {}，裁剪 {}",
+            window, time.monotonic() - t0, result.evaluated, len(pairs), capped,
+        )
         return result
 
     @staticmethod

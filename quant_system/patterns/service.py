@@ -5,12 +5,15 @@ from datetime import date
 from hashlib import sha1
 import json
 import time
+from typing import Callable
 
 from quant_system.data.repository import Repositories
 from quant_system.patterns.context import build_pattern_context
 from quant_system.patterns.definition import PatternDefinition
 from quant_system.patterns.registry import get_definitions
 from quant_system.patterns.runner import PatternRunner, rank_records
+
+ProgressCb = Callable[[float, str], None]
 
 
 @dataclass
@@ -41,10 +44,16 @@ def build_patterns(
     pattern_ids: list[str] | None = None,
     dry_run: bool = False,
     force: bool = False,
+    progress_cb: ProgressCb | None = None,
 ) -> ScanReport:
+    def _progress(p: float, msg: str) -> None:
+        if progress_cb is not None:
+            progress_cb(max(0.0, min(1.0, float(p))), msg)
+
     definitions = get_definitions(pattern_ids)
     params_version = _params_version(definitions)
     if not force and not dry_run and repos.abnormal.has_success_run(trade_date, params_version):
+        _progress(1.0, "已有成功扫描，跳过（可强制重扫）")
         return ScanReport(
             trade_date=trade_date,
             universe_size=0,
@@ -56,20 +65,38 @@ def build_patterns(
         )
 
     t0 = time.perf_counter()
+    _progress(0.05, f"加载 K 线上下文 {trade_date.isoformat()}…")
     # 形态窗 + context lookback（如 1Y / 全历史上限）统一驱动加载量
     max_bars = max((d.required_history_bars() for d in definitions), default=40)
     context = build_pattern_context(repos, trade_date, max_bars=max_bars)
-    runner = PatternRunner(keep_unmatched=False)
+    uni = int(context.get("universe_size") or 0)
+    _progress(0.12, f"上下文就绪，宇宙 {uni} 只")
+
+    n_def = max(1, len(definitions))
     per_pattern: list[PatternReport] = []
     total_written = 0
 
     if not dry_run:
+        _progress(0.14, "清理当日旧命中…")
         cleanup_ids = None if pattern_ids is None else [d.id for d in definitions]
         repos.abnormal.replace_day(trade_date, cleanup_ids)
 
-    for definition in definitions:
+    for i, definition in enumerate(definitions):
+        # 匹配阶段占用总进度 0.15 ~ 0.90
+        lo, hi = 0.15 + 0.75 * (i / n_def), 0.15 + 0.75 * ((i + 1) / n_def)
+
+        def _match_progress(frac: float, msg: str, _lo: float = lo, _hi: float = hi) -> None:
+            _progress(_lo + (_hi - _lo) * frac, msg)
+
+        runner = PatternRunner(
+            keep_unmatched=False,
+            # CLI 无 progress_cb 时保留 rich 条；Web/Job 有 cb 则关 rich，避免抢 stdout
+            show_progress=progress_cb is None,
+            progress_cb=_match_progress if progress_cb is not None else None,
+        )
         run = runner.run(definition, trade_date, context)
         records = rank_records(run.results)
+        _progress(hi, f"{definition.id} 匹配完成 hit={run.stats.get('matched_count', 0)}")
         written = 0 if dry_run else repos.abnormal.bulk_insert([
             {
                 **record,
@@ -91,6 +118,7 @@ def build_patterns(
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
     if not dry_run:
+        _progress(0.95, f"写入命中 {total_written} 条…")
         run_id = repos.abnormal.start_run(
             {
                 "trade_date": trade_date,
@@ -116,6 +144,7 @@ def build_patterns(
             },
         )
 
+    _progress(1.0, f"完成 universe={uni} written={total_written}")
     return ScanReport(
         trade_date=trade_date,
         universe_size=int(context.get("universe_size", 0)),

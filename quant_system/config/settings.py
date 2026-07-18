@@ -60,8 +60,8 @@ class DatabaseConfig(BaseModel):
     sqlite_cache_size_kb: int = 262144           # 256MB
     sqlite_mmap_size_bytes: int = 268435456      # 256MB
     # 抢不到写锁时的最大等待（毫秒）。0 = 立刻报 "database is locked"。
-    # 调长可让短时锁冲突排队等待而非直接崩（如 report 撞上 update 的写入）。
-    sqlite_busy_timeout_ms: int = 15000
+    # 调长可让短时锁冲突排队等待而非直接崩（如 pattern.scan 撞上 similarity.refresh）。
+    sqlite_busy_timeout_ms: int = 60000
 
 
 class DataConfig(BaseModel):
