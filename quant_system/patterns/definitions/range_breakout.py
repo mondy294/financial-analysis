@@ -251,6 +251,7 @@ def build_range_breakout_definition() -> PatternDefinition:
         id="RANGE_BREAKOUT",
         version="tl-v2.5",
         display_name="横盘突破",
+        display_name_en="Range Breakout",
         description="窄箱近水平货架后突破；平台用正交几何防冲高回落假窗，一年价位<=0.23，市值>=500亿。",
         timeline=[platform, breakout],
         # overall similarity >= 72 才算 matched

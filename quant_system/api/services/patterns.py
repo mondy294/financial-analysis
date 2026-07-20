@@ -12,10 +12,36 @@ from quant_system.patterns.registry import get_definitions, get_registry
 
 
 def list_pattern_meta() -> list[dict[str, Any]]:
+    """策略元数据：中英文名以 DB 行准（保存草稿后即生效），其余取 published body。"""
+    try:
+        from quant_system.infra.db import session_scope
+        from quant_system.patterns.store import list_definitions, load_published_definition
+
+        with session_scope() as session:
+            rows = list_definitions(session)
+            out: list[dict[str, Any]] = []
+            for item in rows:
+                pub = load_published_definition(session, item["id"])
+                out.append(
+                    {
+                        "id": item["id"],
+                        "display_name": item["display_name"],
+                        "display_name_en": item.get("display_name_en") or "",
+                        "version": item.get("published_version")
+                        or (pub.version if pub else ""),
+                        "threshold": float(pub.threshold) if pub else 0.0,
+                        "description": item.get("description") or "",
+                    }
+                )
+            if out:
+                return out
+    except Exception:
+        pass
     return [
         {
             "id": p.id,
             "display_name": p.display_name,
+            "display_name_en": getattr(p, "display_name_en", "") or "",
             "version": p.version,
             "threshold": p.threshold,
             "description": p.description,
@@ -73,26 +99,55 @@ def _hit_from_row(row: dict[str, Any], name: str = "") -> dict[str, Any]:
 def top_hits(
     repos: Repositories,
     pattern_id: str,
-    trade_date: date | None,
+    trade_date: date | None = None,
     *,
+    start_date: date | None = None,
+    end_date: date | None = None,
     limit: int | None = 20,
 ) -> list[dict[str, Any]]:
+    from quant_system.patterns.forward_returns import attach_forward_returns
+
     pid = pattern_id.strip().upper()
     if pid not in get_registry():
         raise_bad_request(f"未知 Pattern: {pid}")
-    d = trade_date or repos.abnormal.latest_trade_date()
-    if d is None:
-        return []
+
+    start = start_date or trade_date
+    end = end_date or trade_date
+    if start is None and end is None:
+        latest = repos.abnormal.latest_trade_date()
+        if latest is None:
+            return []
+        start = end = latest
+    elif start is None:
+        start = end
+    elif end is None:
+        end = start
+    assert start is not None and end is not None
+    if start > end:
+        start, end = end, start
+
     # limit<=0：返回全部命中
     fetch_limit = None if limit is not None and limit <= 0 else limit
-    rows = repos.abnormal.top_by_pattern(d, pid, limit=fetch_limit)
+    rows = repos.abnormal.top_by_pattern(
+        None,
+        pid,
+        limit=fetch_limit,
+        start_date=start,
+        end_date=end,
+    )
     out = []
     for r in rows:
         stock = repos.stock.get_stock(r["code"])
         out.append(_hit_from_row(r, stock.name if stock else ""))
-    # 相似度降序（与仓库排序一致，再按 code 稳定）
-    out.sort(key=lambda x: (-float(x["pattern_score"]), x["code"]))
-    return out
+    # 相似度降序，同日按 code 稳定
+    out.sort(
+        key=lambda x: (
+            -float(x["pattern_score"]),
+            str(x.get("trade_date") or ""),
+            x["code"],
+        )
+    )
+    return attach_forward_returns(repos, out)
 
 
 def hits_of_code(
@@ -100,11 +155,14 @@ def hits_of_code(
     code: str,
     trade_date: date | None = None,
 ) -> list[dict[str, Any]]:
+    from quant_system.patterns.forward_returns import attach_forward_returns
+
     code = code.upper()
     rows = repos.abnormal.hits_of(code, trade_date)
     stock = repos.stock.get_stock(code)
     name = stock.name if stock else ""
-    return [_hit_from_row(r, name) for r in rows]
+    out = [_hit_from_row(r, name) for r in rows]
+    return attach_forward_returns(repos, out)
 
 
 def pattern_stats(repos: Repositories, trade_date: date | None) -> dict[str, Any]:

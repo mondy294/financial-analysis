@@ -10,6 +10,8 @@ import {
 } from "@/api/client";
 import { EvalMetricsTable } from "@/components/EvalMetricsTable";
 import { JobProgress } from "@/components/JobProgress";
+import { StockPicker } from "@/components/StockPicker";
+import { featureLabel, featureOptionText } from "@/lib/featureLabels";
 
 type Sel =
   | { kind: "meta" }
@@ -18,6 +20,65 @@ type Sel =
   | { kind: "target"; stageIndex: number; name: string }
   | { kind: "relation"; index: number }
   | { kind: "context"; index: number };
+
+/** 普通文本数字框：编辑中可输入小数点/负号，失焦再写入数值（避免 type=number 吞小数）。 */
+function PlainNum({
+  value,
+  onChange,
+  allowEmpty = false,
+  fallback = 0,
+}: {
+  value: number | null | undefined;
+  onChange: (v: number | null) => void;
+  allowEmpty?: boolean;
+  fallback?: number;
+}) {
+  const fmt = (v: number | null | undefined) =>
+    v == null || Number.isNaN(Number(v)) ? "" : String(v);
+  const [text, setText] = useState(fmt(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(fmt(value));
+  }, [value, focused]);
+
+  const commit = () => {
+    setFocused(false);
+    const raw = text.trim();
+    if (raw === "" || raw === "-" || raw === "." || raw === "-.") {
+      if (allowEmpty) {
+        onChange(null);
+        setText("");
+      } else {
+        onChange(fallback);
+        setText(String(fallback));
+      }
+      return;
+    }
+    const n = Number(raw);
+    if (Number.isFinite(n)) {
+      onChange(n);
+      setText(String(n));
+    } else {
+      setText(fmt(value));
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      value={text}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+    />
+  );
+}
 
 type StageRole = "range" | "up" | "down";
 type EditorMode = "guided" | "advanced";
@@ -224,6 +285,7 @@ export function StrategyEditorPage() {
       setErr(null);
       qc.invalidateQueries({ queryKey: ["definitions"] });
       qc.invalidateQueries({ queryKey: ["definition", id] });
+      qc.invalidateQueries({ queryKey: ["patterns-meta"] });
     },
     onError: (e: Error) => setErr(e.message),
   });
@@ -296,7 +358,15 @@ export function StrategyEditorPage() {
     <div className="editor-page">
       <div className="page-head">
         <div>
-          <h1>{body.display_name}</h1>
+          <h1>
+            {body.display_name}
+            {body.display_name_en ? (
+              <span className="muted" style={{ fontWeight: 400, fontSize: "0.85em" }}>
+                {" "}
+                / {body.display_name_en}
+              </span>
+            ) : null}
+          </h1>
           <p className="muted">
             <span className="mono">{body.id}</span>
             {" · "}
@@ -525,8 +595,9 @@ export function StrategyEditorPage() {
                         : "nested"
                     }
                     onClick={() => setSel({ kind: "target", stageIndex: i, name: tname })}
+                    title={tname}
                   >
-                    {tname}
+                    {featureLabel(tname, catalog)}
                   </button>
                 ))}
                 <button
@@ -609,7 +680,7 @@ export function StrategyEditorPage() {
                   className={sel.kind === "relation" && sel.index === i ? "active" : ""}
                   onClick={() => setSel({ kind: "relation", index: i })}
                 >
-                  {r.name}
+                  {featureLabel(r.name, catalog)}
                 </button>
                 <button
                   type="button"
@@ -655,7 +726,7 @@ export function StrategyEditorPage() {
                   className={sel.kind === "context" && sel.index === i ? "active" : ""}
                   onClick={() => setSel({ kind: "context", index: i })}
                 >
-                  {c.key || c.name}
+                  {featureLabel(c.name, catalog)}
                 </button>
                 <button
                   type="button"
@@ -731,6 +802,7 @@ export function StrategyEditorPage() {
           {sel.kind === "target" && body.timeline[sel.stageIndex]?.targets[sel.name] && (
             <TargetForm
               name={sel.name}
+              title={`${featureLabel(sel.name, catalog)} (${sel.name})`}
               target={body.timeline[sel.stageIndex].targets[sel.name]}
               hint={catalogHint(sel.name)?.description}
               stageWeightSum={weightSum(body.timeline[sel.stageIndex].targets)}
@@ -790,7 +862,10 @@ export function StrategyEditorPage() {
           )}
           {sel.kind === "target" && (
             <p>
-              <strong className="mono">{sel.name}</strong>
+              <strong>{featureLabel(sel.name, catalog)}</strong>
+              <span className="mono muted" style={{ marginLeft: "0.35rem", fontSize: "0.8rem" }}>
+                {sel.name}
+              </span>
               <br />
               {catalogHint(sel.name)?.description || "—"}
               {catalogHint(sel.name)?.tier && (
@@ -860,8 +935,8 @@ export function StrategyEditorPage() {
         <div className="toolbar">
           {dbgMode === "eval" && (
             <label>
-              代码
-              <input value={dbgCode} onChange={(e) => setDbgCode(e.target.value)} placeholder="001258.SZ" />
+              股票
+              <StockPicker mode="single" value={dbgCode} onChange={setDbgCode} />
             </label>
           )}
           <label>
@@ -871,12 +946,10 @@ export function StrategyEditorPage() {
           {dbgMode === "scan" && (
             <label>
               TopN
-              <input
-                type="number"
+              <PlainNum
                 value={dbgLimit}
-                min={1}
-                max={500}
-                onChange={(e) => setDbgLimit(Number(e.target.value) || 50)}
+                fallback={50}
+                onChange={(n) => setDbgLimit(Math.max(1, Math.min(500, n ?? 50)))}
               />
             </label>
           )}
@@ -911,8 +984,8 @@ export function StrategyEditorPage() {
           <div className="eval-result">
             <p>
               <strong>{evalResult.matched ? "命中" : "未命中"}</strong>
-              {" · sim "}
-              {evalResult.similarity.toFixed(1)} / {evalResult.threshold}
+              {" · 最终评分 "}
+              {evalResult.similarity.toFixed(1)} / 阈值 {evalResult.threshold}
               {" · v "}
               {evalResult.version}
               {evalResult.hard_failed?.length ? (
@@ -975,10 +1048,19 @@ function MetaForm({
     <>
       <h3>基本信息</h3>
       <label className="field">
-        显示名
+        中文名
         <input
           value={body.display_name}
           onChange={(e) => patch((b) => { b.display_name = e.target.value; })}
+          placeholder="如：横盘突破"
+        />
+      </label>
+      <label className="field">
+        英文名
+        <input
+          value={body.display_name_en || ""}
+          onChange={(e) => patch((b) => { b.display_name_en = e.target.value; })}
+          placeholder="如：Range Breakout"
         />
       </label>
       <label className="field">
@@ -990,36 +1072,36 @@ function MetaForm({
         />
       </label>
       <label className="field">
-        threshold
-        <input
-          type="number"
-          step="0.1"
+        最终评分阈值（0–100）
+        <PlainNum
           value={body.threshold}
-          onChange={(e) => patch((b) => { b.threshold = Number(e.target.value); })}
-        />
-      </label>
-      <label className="field">
-        history_bars
-        <input
-          type="number"
-          value={body.history_bars ?? ""}
-          onChange={(e) =>
+          onChange={(n) =>
             patch((b) => {
-              b.history_bars = e.target.value === "" ? null : Number(e.target.value);
+              const v = n ?? 80;
+              b.threshold = Math.max(0, Math.min(100, v));
             })
           }
+        />
+      </label>
+      <p className="muted" style={{ marginTop: "-0.35rem" }}>
+        综合相似度 ≥ 该阈值且无硬约束失败时，才计为命中；发布后正式扫描生效。
+      </p>
+      <label className="field">
+        history_bars
+        <PlainNum
+          value={body.history_bars}
+          allowEmpty
+          onChange={(n) => patch((b) => { b.history_bars = n; })}
         />
       </label>
       <p className="muted">context 权重: {body.stage_weights.context ?? 0}</p>
       <label className="field">
         stage_weights.context
-        <input
-          type="number"
-          step="0.01"
+        <PlainNum
           value={body.stage_weights.context ?? 0}
-          onChange={(e) =>
+          onChange={(n) =>
             patch((b) => {
-              b.stage_weights.context = Number(e.target.value);
+              b.stage_weights.context = n ?? 0;
             })
           }
         />
@@ -1053,45 +1135,36 @@ function ConstraintsForm({
       </label>
       <label className="field">
         min_list_days
-        <input
-          type="number"
-          value={c.min_list_days ?? ""}
-          onChange={(e) =>
+        <PlainNum
+          value={c.min_list_days}
+          allowEmpty
+          onChange={(n) =>
             patch((b) => {
-              b.constraints = {
-                ...(b.constraints || {}),
-                min_list_days: e.target.value === "" ? null : Number(e.target.value),
-              };
+              b.constraints = { ...(b.constraints || {}), min_list_days: n };
             })
           }
         />
       </label>
       <label className="field">
         min_market_cap（亿元）
-        <input
-          type="number"
-          value={c.min_market_cap ?? ""}
-          onChange={(e) =>
+        <PlainNum
+          value={c.min_market_cap}
+          allowEmpty
+          onChange={(n) =>
             patch((b) => {
-              b.constraints = {
-                ...(b.constraints || {}),
-                min_market_cap: e.target.value === "" ? null : Number(e.target.value),
-              };
+              b.constraints = { ...(b.constraints || {}), min_market_cap: n };
             })
           }
         />
       </label>
       <label className="field">
         min_amount
-        <input
-          type="number"
-          value={c.min_amount ?? ""}
-          onChange={(e) =>
+        <PlainNum
+          value={c.min_amount}
+          allowEmpty
+          onChange={(n) =>
             patch((b) => {
-              b.constraints = {
-                ...(b.constraints || {}),
-                min_amount: e.target.value === "" ? null : Number(e.target.value),
-              };
+              b.constraints = { ...(b.constraints || {}), min_amount: n };
             })
           }
         />
@@ -1156,28 +1229,21 @@ function StageForm({
       </label>
       <label className="field">
         stage_weight
-        <input
-          type="number"
-          step="0.01"
-          value={weight}
-          onChange={(e) => onWeight(Number(e.target.value))}
-        />
+        <PlainNum value={weight} onChange={(n) => onWeight(n ?? 0)} />
       </label>
       <div className="field-row">
         <label className="field">
           window min
-          <input
-            type="number"
+          <PlainNum
             value={stage.window.min_length}
-            onChange={(e) => onWindow(Number(e.target.value), stage.window.max_length)}
+            onChange={(n) => onWindow(n ?? 1, stage.window.max_length)}
           />
         </label>
         <label className="field">
           window max
-          <input
-            type="number"
+          <PlainNum
             value={stage.window.max_length}
-            onChange={(e) => onWindow(stage.window.min_length, Number(e.target.value))}
+            onChange={(n) => onWindow(stage.window.min_length, n ?? 1)}
           />
         </label>
       </div>
@@ -1213,7 +1279,7 @@ function TargetForm({
   return (
     <>
       <div className="form-title-row">
-        <h3 className="mono">{title || name}</h3>
+        <h3>{title || featureLabel(name)}</h3>
         {showDelete && onDelete ? (
           <button type="button" className="btn danger" onClick={onDelete}>
             删除指标
@@ -1224,15 +1290,15 @@ function TargetForm({
       <div className="field-row">
         <label className="field">
           ideal
-          <input type="number" step="any" value={target.ideal} onChange={(e) => set("ideal", Number(e.target.value))} />
+          <PlainNum value={target.ideal} onChange={(n) => set("ideal", n ?? 0)} />
         </label>
         <label className="field">
           tolerance
-          <input type="number" step="any" value={target.tolerance} onChange={(e) => set("tolerance", Number(e.target.value))} />
+          <PlainNum value={target.tolerance} onChange={(n) => set("tolerance", n ?? 0)} />
         </label>
         <label className="field">
           weight
-          <input type="number" step="any" value={target.weight ?? 0} onChange={(e) => set("weight", Number(e.target.value))} />
+          <PlainNum value={target.weight ?? 0} onChange={(n) => set("weight", n ?? 0)} />
         </label>
       </div>
       <label className="field">
@@ -1246,20 +1312,18 @@ function TargetForm({
       <div className="field-row">
         <label className="field">
           hard_min
-          <input
-            type="number"
-            step="any"
-            value={target.hard_min ?? ""}
-            onChange={(e) => set("hard_min", e.target.value === "" ? null : Number(e.target.value))}
+          <PlainNum
+            value={target.hard_min}
+            allowEmpty
+            onChange={(n) => set("hard_min", n)}
           />
         </label>
         <label className="field">
           hard_max
-          <input
-            type="number"
-            step="any"
-            value={target.hard_max ?? ""}
-            onChange={(e) => set("hard_max", e.target.value === "" ? null : Number(e.target.value))}
+          <PlainNum
+            value={target.hard_max}
+            allowEmpty
+            onChange={(n) => set("hard_max", n)}
           />
         </label>
       </div>
@@ -1295,7 +1359,7 @@ function RelationForm({
         >
           {features.map((f) => (
             <option key={f.name} value={f.name}>
-              {f.name}
+              {featureOptionText(f)}
             </option>
           ))}
         </select>
@@ -1314,8 +1378,8 @@ function RelationForm({
         </select>
       </label>
       <TargetForm
-        name="target"
-        title="Target"
+        name={rel.name}
+        title={`目标 · ${featureLabel(rel.name, features)}`}
         target={rel.target}
         onChange={(t) => onChange({ ...rel, target: t })}
         showDelete={false}
@@ -1345,27 +1409,22 @@ function ContextForm({
         <select value={ctx.name} onChange={(e) => onChange({ ...ctx, name: e.target.value })}>
           {features.map((f) => (
             <option key={f.name} value={f.name}>
-              {f.name}
+              {featureOptionText(f)}
             </option>
           ))}
         </select>
       </label>
       <label className="field">
         lookback_bars
-        <input
-          type="number"
-          value={ctx.lookback_bars ?? ""}
-          onChange={(e) =>
-            onChange({
-              ...ctx,
-              lookback_bars: e.target.value === "" ? null : Number(e.target.value),
-            })
-          }
+        <PlainNum
+          value={ctx.lookback_bars}
+          allowEmpty
+          onChange={(n) => onChange({ ...ctx, lookback_bars: n })}
         />
       </label>
       <TargetForm
-        name="target"
-        title="Target"
+        name={ctx.name}
+        title={`目标 · ${featureLabel(ctx.name, features)}`}
         target={ctx.target}
         onChange={(t) => onChange({ ...ctx, target: t })}
         showDelete={false}
@@ -1416,7 +1475,11 @@ function AddFeaturesModal({
           );
         }}
       />
-      <span className="mono">{f.name}</span>
+      <span>{featureLabel(f)}</span>
+      <span className="mono muted" style={{ fontSize: "0.78rem" }}>
+        {" "}
+        {f.name}
+      </span>
       {f.ui_group && <span className="tag">{f.ui_group}</span>}
       <span className="muted"> {f.description}</span>
     </label>

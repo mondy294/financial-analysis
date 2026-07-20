@@ -147,15 +147,17 @@ def _load_stock_meta(
         StockBasic.is_st,
         StockBasic.list_date,
         StockBasic.market_cap,
+        StockBasic.industry_name,
     ).where(StockBasic.code.in_(codes))
     out: dict[str, dict[str, Any]] = {}
-    for code, name, is_st, list_date, market_cap in session.execute(stmt).all():
+    for code, name, is_st, list_date, market_cap, industry_name in session.execute(stmt).all():
         out[str(code)] = {
             "name": name,
             "is_st": bool(is_st),
             "list_date": list_date,
             # 单位：亿元；优先用 daily_valuation 覆盖（见下）
             "market_cap": float(market_cap) if market_cap is not None else None,
+            "industry_name": industry_name,
         }
 
     # stock_basic.market_cap 经常为空；日频估值表才是可靠来源（亿元）

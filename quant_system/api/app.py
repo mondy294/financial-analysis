@@ -12,6 +12,8 @@ from quant_system.api.errors import ApiError, api_error_handler, http_error_hand
 from quant_system.api.routers import (
     clusters,
     definitions,
+    earnings_events,
+    event_stats,
     health,
     jobs,
     meta,
@@ -68,9 +70,11 @@ def create_app(*, mount_frontend: bool | None = None) -> FastAPI:
         meta.router,
         stocks.router,
         clusters.router,
+        earnings_events.router,
         # definitions 必须在 patterns 之前，避免 /patterns/{id} 吃掉 /definitions
         definitions.router,
         patterns.router,
+        event_stats.router,
         signals.router,
         reports.router,
         jobs.router,

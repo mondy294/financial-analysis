@@ -36,17 +36,26 @@ def hits(
 def top(
     pattern_id: str,
     trade_date: date | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
     limit: int = Query(
         0,
         ge=0,
-        le=5000,
+        le=20000,
         description="返回条数；0=全部命中（按相似度降序）",
     ),
     repos: Repositories = Depends(get_repos),
 ) -> list[PatternHitOut]:
     return [
         PatternHitOut(**x)
-        for x in pattern_svc.top_hits(repos, pattern_id, trade_date, limit=limit)
+        for x in pattern_svc.top_hits(
+            repos,
+            pattern_id,
+            trade_date,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+        )
     ]
 
 
@@ -67,12 +76,23 @@ def eval_pattern(
 
 @router.post("/scan", response_model=JobOut)
 def scan(body: ScanRequest) -> JobOut:
-    d = body.trade_date or tc.latest_trading_day()
+    start = body.start_date or body.trade_date
+    end = body.end_date or body.trade_date
+    if start is None and end is None:
+        start = end = tc.latest_trading_day()
+    elif start is None:
+        start = end
+    elif end is None:
+        end = start
+    assert start is not None and end is not None
+    if start > end:
+        start, end = end, start
 
     def _fn(job) -> None:
         run_pattern_scan_job(
             job,
-            trade_date=d,
+            start_date=start,
+            end_date=end,
             pattern_ids=body.pattern_ids,
             force=body.force,
         )

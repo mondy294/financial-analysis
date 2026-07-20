@@ -180,6 +180,30 @@ def ensure_schema_columns(engine: Engine | None = None) -> list[str]:
                     conn.execute(text(f"ALTER TABLE stock_relationship ADD COLUMN {name} {typ}"))
                     added.append(f"stock_relationship.{name}")
 
+    # pattern_event_run：进度持久化（服务重启后前端仍可展示）
+    pev_run_cols = {
+        "job_id": "VARCHAR(32)",
+        "progress": "NUMERIC(8,6)",
+        "progress_msg": "VARCHAR(256)",
+    }
+    if "pattern_event_run" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("pattern_event_run")}
+        with engine.begin() as conn:
+            for name, typ in pev_run_cols.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE pattern_event_run ADD COLUMN {name} {typ}"))
+                    added.append(f"pattern_event_run.{name}")
+
+    # pattern_definition：英文显示名
+    if "pattern_definition" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("pattern_definition")}
+        if "display_name_en" not in existing:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE pattern_definition ADD COLUMN display_name_en VARCHAR(128)")
+                )
+            added.append("pattern_definition.display_name_en")
+
     # 新表仍靠 create_all
     Base.metadata.create_all(engine)
     if added:

@@ -88,7 +88,15 @@ export function StrategiesPage() {
         {(defs.data || []).map((d) => (
           <article key={d.id} className="panel strategy-card">
             <div className="strategy-card-top">
-              <h2>{d.display_name}</h2>
+              <h2>
+                {d.display_name}
+                {d.display_name_en ? (
+                  <span className="muted" style={{ fontWeight: 400, fontSize: "0.85em" }}>
+                    {" "}
+                    / {d.display_name_en}
+                  </span>
+                ) : null}
+              </h2>
               <span className={`pill ${d.status === "published" ? "ok" : ""}`}>{d.status}</span>
             </div>
             <p className="mono muted">{d.id}</p>

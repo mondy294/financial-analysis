@@ -18,6 +18,7 @@ class TradingDayOut(BaseModel):
 class PatternMetaOut(BaseModel):
     id: str
     display_name: str
+    display_name_en: str = ""
     version: str
     threshold: float
     description: str = ""
@@ -34,10 +35,14 @@ class JobOut(BaseModel):
     message: str | None = None
     error: str | None = None
     result: dict | None = None
+    params: dict | None = None
+    cancel_requested: bool = False
 
 
 class ScanRequest(BaseModel):
     trade_date: date | None = None
+    start_date: date | None = None
+    end_date: date | None = None
     pattern_ids: list[str] | None = None
     force: bool = False
 

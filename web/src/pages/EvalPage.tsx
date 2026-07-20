@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, type PatternEval } from "@/api/client";
 import { EvalMetricsTable } from "@/components/EvalMetricsTable";
+import { StockPicker } from "@/components/StockPicker";
 
 export function EvalPage() {
   const [params] = useSearchParams();
@@ -47,8 +48,8 @@ export function EvalPage() {
       <div className="panel" style={{ marginBottom: "1rem", padding: "1rem" }}>
         <div className="toolbar">
           <label>
-            代码
-            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="001258.SZ" />
+            股票
+            <StockPicker mode="single" value={code} onChange={setCode} />
           </label>
           <label>
             交易日
@@ -57,13 +58,14 @@ export function EvalPage() {
           <label>
             Pattern
             <select value={patternId} onChange={(e) => setPatternId(e.target.value)}>
-              {(patterns.data || [{ id: "RANGE_BREAKOUT", display_name: "RANGE_BREAKOUT" }]).map(
-                (p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.id}
-                  </option>
-                ),
-              )}
+              {(patterns.data || []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.display_name_en
+                    ? `${p.display_name} / ${p.display_name_en}`
+                    : p.display_name || p.id}{" "}
+                  ({p.id})
+                </option>
+              ))}
             </select>
           </label>
           <button
@@ -91,7 +93,7 @@ export function EvalPage() {
               </div>
             </div>
             <div className="card">
-              <div className="label">相似度 / 阈值</div>
+              <div className="label">最终评分 / 阈值</div>
               <div className="value mono">
                 {result.similarity.toFixed(2)} / {result.threshold}
               </div>

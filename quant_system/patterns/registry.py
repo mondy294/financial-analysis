@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from quant_system.patterns.definition import PatternDefinition
-from quant_system.patterns.definitions import build_range_breakout_definition
+from quant_system.patterns.definitions import (
+    build_arc_high_retest_definition,
+    build_range_breakout_definition,
+)
 
 # 进程内 published 缓存；publish / seed 后 invalidate
 _CACHE: dict[str, PatternDefinition] | None = None
@@ -9,6 +12,7 @@ _CACHE: dict[str, PatternDefinition] | None = None
 # 纯 Python 出厂种子（DB 不可用时的回退）
 _SEED_REGISTRY: dict[str, PatternDefinition] = {
     "RANGE_BREAKOUT": build_range_breakout_definition(),
+    "ARC_HIGH_RETEST": build_arc_high_retest_definition(),
 }
 
 

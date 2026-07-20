@@ -152,6 +152,7 @@ class PatternDefinition:
     display_name: str
     description: str
     timeline: list[Stage]
+    display_name_en: str = ""
     threshold: float = 80.0
     stage_weights: dict[str, float] = field(default_factory=dict)
     relations: list[RelationSpec] = field(default_factory=list)
@@ -165,8 +166,8 @@ class PatternDefinition:
     def __post_init__(self) -> None:
         if not self.timeline:
             raise ValueError("timeline must not be empty")
-        if len(self.timeline) > 3:
-            raise ValueError("V1 allows at most 3 stages")
+        if len(self.timeline) > 4:
+            raise ValueError("allows at most 4 stages")
         names = [s.name for s in self.timeline]
         if len(set(names)) != len(names):
             raise ValueError("stage names must be unique")

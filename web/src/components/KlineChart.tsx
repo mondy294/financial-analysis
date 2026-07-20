@@ -46,6 +46,10 @@ type Props = {
   bars: ChartBar[];
   features?: ChartFeature[];
   ranges?: Record<string, WindowRange> | null;
+  /** 业绩公允价水平线（元） */
+  fairPrice?: number | null;
+  fairPriceVisible?: boolean;
+  fairPriceTitle?: string;
 };
 
 type OverlayKey = "ma5" | "ma10" | "ma20" | "ma60" | "boll";
@@ -113,7 +117,14 @@ function buildVisibleRange(rightIndex: number, visibleCount: number): LogicalRan
   return { from, to };
 }
 
-export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
+export function KlineChart({
+  bars: dailyBars,
+  features = [],
+  ranges,
+  fairPrice = null,
+  fairPriceVisible = false,
+  fairPriceTitle = "公允价",
+}: Props) {
   const mainRef = useRef<HTMLDivElement>(null);
   const macdRef = useRef<HTMLDivElement>(null);
   const rsiRef = useRef<HTMLDivElement>(null);
@@ -256,9 +267,15 @@ export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
 
     const main = createChart(mainRef.current, {
       ...common,
-      height: mainRef.current.clientHeight || 420,
+      height: mainRef.current.clientHeight || 480,
     });
     charts.push(main);
+
+    // 主图纵轴：少留顶、底留给成交量，避免蜡烛被挤在中间一条
+    main.priceScale("right").applyOptions({
+      autoScale: true,
+      scaleMargins: { top: 0.04, bottom: 0.22 },
+    });
 
     const candle = main.addCandlestickSeries({
       upColor: "#c2410c",
@@ -296,7 +313,9 @@ export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
       priceFormat: { type: "volume" },
       priceScaleId: "vol",
     });
-    main.priceScale("vol").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+    main.priceScale("vol").applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
     vol.setData(
       bars.map((b) => ({
         time: toTime(b.trade_date),
@@ -319,6 +338,8 @@ export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
+        // MA/BOLL 不参与纵轴自适应，否则远离现价的均线会把蜡烛压扁
+        autoscaleInfoProvider: () => null,
       });
       s.setData(data);
     };
@@ -331,6 +352,22 @@ export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
       addLine(seriesPack.bollUpper, "rgba(15,118,110,0.85)", 1, LineStyle.Dashed);
       addLine(seriesPack.bollMid, "rgba(15,118,110,0.55)", 1, LineStyle.Dotted);
       addLine(seriesPack.bollLower, "rgba(15,118,110,0.85)", 1, LineStyle.Dashed);
+    }
+
+    if (
+      fairPriceVisible &&
+      fairPrice != null &&
+      Number.isFinite(fairPrice) &&
+      fairPrice > 0
+    ) {
+      candle.createPriceLine({
+        price: fairPrice,
+        color: "#b45309",
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: fairPriceTitle,
+      });
     }
 
     if (period === "day" && ranges) {
@@ -486,7 +523,7 @@ export function KlineChart({ bars: dailyBars, features = [], ranges }: Props) {
     };
     // rightIndex/visibleCount 由按钮/拖拽单独 apply，避免重建
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bars, ranges, overlays, panes, seriesPack, period]);
+  }, [bars, ranges, overlays, panes, seriesPack, period, fairPrice, fairPriceVisible, fairPriceTitle]);
 
   useEffect(() => {
     rightIndexRef.current = rightIndex;

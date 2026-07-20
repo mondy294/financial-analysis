@@ -111,6 +111,18 @@ def extract_peak_day(df: pd.DataFrame) -> FeatureValue:
     return _feat("peak_day", idx / (n - 1), peak_index=idx, n=n)
 
 
+def extract_trough_day(df: pd.DataFrame) -> FeatureValue:
+    """段内最低价出现位置，归一化到 [0,1]；0=段首，1=段尾。弧形下跌段理想靠近段尾。"""
+    n = len(df)
+    if n < 2:
+        return _feat("trough_day", None)
+    lows = df["low"].to_numpy(dtype=float)
+    if np.any(~np.isfinite(lows)):
+        return _feat("trough_day", None)
+    idx = int(np.nanargmin(lows))
+    return _feat("trough_day", idx / (n - 1), trough_index=idx, n=n)
+
+
 def extract_total_return(df: pd.DataFrame) -> FeatureValue:
     """段收益：多日用 close_last/close_first-1；单日用 close/prior_close-1。
 
@@ -658,6 +670,63 @@ def relation_break_hold_ratio(
     return _feat("break_hold_ratio", held / len(closes), held_days=held, n=len(closes), platform_high=high)
 
 
+def relation_low_vs_prior_high(
+    atoms: dict[str, StageAtoms],
+    stage_map: dict[str, str],
+    frames: StageFrames | None = None,
+) -> FeatureValue:
+    """回踩段最低价相对前高：low / prior.high_max - 1；>=0 表示未跌破前高。"""
+    plat = atoms.get(stage_map.get("platform", "platform"), {})
+    brk = atoms.get(stage_map.get("breakout", "breakout"), {})
+    high = plat.get("high_max")
+    low = brk.get("low_min")
+    if frames is not None:
+        brk_name = stage_map.get("breakout", "breakout")
+        brk_df = frames.get(brk_name)
+        if brk_df is not None and not brk_df.empty:
+            low = float(brk_df["low"].min())
+    if high is None or low is None or high == 0:
+        return _feat("low_vs_prior_high", None)
+    return _feat(
+        "low_vs_prior_high",
+        float(low) / float(high) - 1.0,
+        platform_high=high,
+        low_min=low,
+    )
+
+
+def relation_breakout_on_last_day(
+    atoms: dict[str, StageAtoms],
+    stage_map: dict[str, str],
+    frames: StageFrames | None = None,
+) -> FeatureValue:
+    """拉升段是否在末日才首次收盘站上前高：1=末日首破，0=更早已破或末日未破。"""
+    plat = atoms.get(stage_map.get("platform", "platform"), {})
+    high = plat.get("high_max")
+    if high is None or frames is None:
+        return _feat("breakout_on_last_day", None)
+    brk_name = stage_map.get("breakout", "breakout")
+    brk_df = frames.get(brk_name)
+    if brk_df is None or brk_df.empty:
+        return _feat("breakout_on_last_day", None)
+    closes = brk_df["close"].to_numpy(dtype=float)
+    h = float(high)
+    last_above = bool(np.isfinite(closes[-1]) and closes[-1] >= h)
+    if not last_above:
+        return _feat("breakout_on_last_day", 0.0, platform_high=h, last_close=float(closes[-1]))
+    if len(closes) == 1:
+        return _feat("breakout_on_last_day", 1.0, platform_high=h, last_close=float(closes[-1]))
+    earlier = closes[:-1]
+    earlier_above = bool(np.any(np.isfinite(earlier) & (earlier >= h)))
+    return _feat(
+        "breakout_on_last_day",
+        0.0 if earlier_above else 1.0,
+        platform_high=h,
+        last_close=float(closes[-1]),
+        earlier_broke=earlier_above,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Context Feature（股票级：对 lookback 历史算一次）
 # ---------------------------------------------------------------------------
@@ -733,6 +802,54 @@ def _stage(
     )
 
 
+# 编辑器展示用中文短名（稳定英文 name 不变）
+FEATURE_LABELS_ZH: dict[str, str] = {
+    "amplitude": "振幅",
+    "close_vs_window_high": "相对窗口高点",
+    "peak_day": "最高价位置",
+    "trough_day": "最低价位置",
+    "total_return": "区间涨跌幅",
+    "slope": "价格斜率",
+    "linearity": "走势直线度",
+    "volatility": "波动率",
+    "volume_shrink_ratio": "后半段缩量比",
+    "bull_ratio": "阳线占比",
+    "body_ratio": "实体占比",
+    "avg_volume": "平均成交量",
+    "gap_open": "跳空开盘",
+    "close_strength": "收盘强度",
+    "volume_up_ratio": "放量日占比",
+    "volume_acceleration": "量能首尾比",
+    "volume_last_vs_avg": "尾日量/均量",
+    "volume_climax_day": "天量位置",
+    "upper_shadow_ratio": "上影占比",
+    "lower_shadow_ratio": "下影占比",
+    "max_drawdown_in_window": "段内最大回撤",
+    "return_first": "首日涨跌幅",
+    "return_last": "尾日涨跌幅",
+    "return_acceleration": "涨幅加速度",
+    "up_day_ratio": "上涨日占比",
+    "consecutive_up_ratio": "连涨占比",
+    "consecutive_up_days": "连涨天数",
+    "stall_score": "滞涨分",
+    "consecutive_volume_up_ratio": "连续放量占比",
+    "return_slope_accel": "斜率加速度",
+    "close_accel_ratio": "涨幅加速比",
+    "down_day_ratio": "下跌日占比",
+    "consecutive_down_days": "连跌天数",
+    "consecutive_down_ratio": "连跌占比",
+    "breakout_distance": "突破前高距离",
+    "volume_vs_platform": "相对前段放量",
+    "close_vs_platform_mid": "相对前段中轴",
+    "break_hold_ratio": "站上前高占比",
+    "low_vs_prior_high": "最低价相对前高",
+    "breakout_on_last_day": "末日首破前高",
+    "price_position": "一年价位",
+    "price_percentile": "收盘分位",
+    "close_vs_high": "相对历史高点",
+}
+
+
 FEATURE_CATALOG: dict[str, FeatureSpec] = {
     # ---- L0 通用段内 ----
     "amplitude": _stage(
@@ -749,6 +866,11 @@ FEATURE_CATALOG: dict[str, FeatureSpec] = {
         "peak_day", "trend",
         "段内最高价位置 [0,1]，0=段首 1=段尾",
         extract_peak_day, ui_group="path",
+    ),
+    "trough_day": _stage(
+        "trough_day", "trend",
+        "段内最低价位置 [0,1]，0=段首 1=段尾（弧形下跌理想靠近段尾）",
+        extract_trough_day, ui_group="path",
     ),
     "total_return": _stage(
         "total_return", "price",
@@ -927,6 +1049,18 @@ FEATURE_CATALOG: dict[str, FeatureSpec] = {
         kind="relation", tier="relation", ui_group="relation",
         extract_relation=relation_break_hold_ratio,
     ),
+    "low_vs_prior_high": FeatureSpec(
+        "low_vs_prior_high", "relation",
+        "回踩段 low_min / 前高 - 1（未跌破前高应 >= 0 附近）",
+        kind="relation", tier="relation", ui_group="relation",
+        extract_relation=relation_low_vs_prior_high,
+    ),
+    "breakout_on_last_day": FeatureSpec(
+        "breakout_on_last_day", "relation",
+        "拉升段是否末日才首次收盘站上前高（1=是，0=否）",
+        kind="relation", tier="relation", ui_group="relation",
+        extract_relation=relation_breakout_on_last_day,
+    ),
     # ---- L2 Context ----
     "price_position": FeatureSpec(
         "price_position", "price",
@@ -987,6 +1121,10 @@ def features_for_role(role: str | None, *, include_all_when_no_role: bool = True
     return sorted(out)
 
 
+def feature_label_zh(name: str, description: str = "") -> str:
+    return FEATURE_LABELS_ZH.get(name) or description or name
+
+
 def feature_public_dict(spec: FeatureSpec) -> dict[str, Any]:
     roles_out: list[str] | None
     if spec.roles is None:
@@ -995,6 +1133,7 @@ def feature_public_dict(spec: FeatureSpec) -> dict[str, Any]:
         roles_out = sorted(spec.roles)
     return {
         "name": spec.name,
+        "label": feature_label_zh(spec.name, spec.description),
         "category": spec.category,
         "kind": spec.kind,
         "description": spec.description,

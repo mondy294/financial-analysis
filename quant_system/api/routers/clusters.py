@@ -30,7 +30,7 @@ def clusters_list(
 def clusters_detail(
     cluster_id: int,
     profile_id: str = Query("pearson_w60"),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=5000),
     session: Session = Depends(get_db_session),
 ) -> dict:
     data = cq.cluster_detail(

@@ -117,6 +117,8 @@ def execute_task(job: JobRecord, task_id: str, params: dict[str, Any]) -> None:
         "similarity.refresh": _run_similarity_refresh,
         "relationship.build": _run_similarity_refresh,
         "cluster.build": _run_cluster_build,
+        "eea.build_panel": _run_eea_build_panel,
+        "eea.fit": _run_eea_fit,
         "cache.clear": _run_cache_clear,
         "cache.rebuild": _run_cache_rebuild,
         "init_db": _run_init_db,
@@ -485,10 +487,19 @@ def _run_pipeline(job: JobRecord, params: dict[str, Any]) -> None:
 def _run_pattern_scan(job: JobRecord, params: dict[str, Any]) -> None:
     from quant_system.api.jobs.runner import run_pattern_scan_job
 
-    d = _parse_date(params.get("trade_date"))
+    start = _parse_date(params.get("start_date") or params.get("trade_date"))
+    end = _parse_date(
+        params.get("end_date") or params.get("trade_date") or params.get("start_date")
+    )
     ids = _parse_codes(params.get("pattern_ids"))
     force = _bool(params.get("force"))
-    run_pattern_scan_job(job, trade_date=d, pattern_ids=ids, force=force)
+    run_pattern_scan_job(
+        job,
+        start_date=start,
+        end_date=end,
+        pattern_ids=ids,
+        force=force,
+    )
 
 
 def _run_similarity_refresh(job: JobRecord, params: dict[str, Any]) -> None:
@@ -594,6 +605,93 @@ def _run_cluster_build(job: JobRecord, params: dict[str, Any]) -> None:
     if report.status == "FAILED":
         raise RuntimeError(report.error or "cluster failed")
     return
+
+
+def _run_eea_build_panel(job: JobRecord, params: dict[str, Any]) -> None:
+    from quant_system.api.jobs.runner import JobCancelled, is_cancel_requested
+    from quant_system.data.repository import build_repositories
+    from quant_system.earnings_analytics import service as eea
+    from quant_system.infra.db import session_scope
+
+    start = _parse_date(params.get("start_date"))
+    end = _parse_date(params.get("end_date"))
+    panel_tag = str(params.get("panel_tag") or "default")
+    build_events = _bool(params.get("build_events"), True)
+    main_only = _bool(params.get("main_only"), True)
+    cluster_run_id = params.get("cluster_run_id") or None
+    if isinstance(cluster_run_id, str) and not cluster_run_id.strip():
+        cluster_run_id = None
+
+    def _progress(frac: float, msg: str) -> None:
+        if is_cancel_requested(job):
+            raise JobCancelled("用户取消")
+        job.progress = max(0.0, min(1.0, float(frac)))
+        job.message = msg
+
+    job.message = f"EEA build panel {start}~{end}"
+    job.progress = 0.02
+    with session_scope() as session:
+        repos = build_repositories(session)
+        event_result = None
+        if build_events:
+            event_result = eea.service_build_events(
+                repos,
+                start,
+                end,
+                main_only=main_only,
+                progress_cb=lambda f, m: _progress(0.02 + 0.45 * f, m),
+            )
+        panel_result = eea.service_build_panel(
+            repos,
+            start=start,
+            end=end,
+            panel_tag=panel_tag,
+            cluster_run_id=cluster_run_id,
+            progress_cb=lambda f, m: _progress(0.5 + 0.5 * f, m),
+        )
+    job.progress = 1.0
+    job.message = "EEA panel done"
+    job.result = {"events": event_result, "panel": panel_result}
+
+
+def _run_eea_fit(job: JobRecord, params: dict[str, Any]) -> None:
+    from quant_system.api.jobs.runner import JobCancelled, is_cancel_requested
+    from quant_system.data.repository import build_repositories
+    from quant_system.earnings_analytics import service as eea
+    from quant_system.infra.db import session_scope
+
+    panel_tag = str(params.get("panel_tag") or "default")
+    scopes_raw = params.get("scopes") or "all,interim,annual"
+    modes_raw = params.get("cluster_modes") or "none,fixed_effect,per_cluster"
+    if isinstance(scopes_raw, list):
+        scopes = [str(x).strip() for x in scopes_raw if str(x).strip()]
+    else:
+        scopes = [x.strip() for x in str(scopes_raw).split(",") if x.strip()]
+    if isinstance(modes_raw, list):
+        cluster_modes = [str(x).strip() for x in modes_raw if str(x).strip()]
+    else:
+        cluster_modes = [x.strip() for x in str(modes_raw).split(",") if x.strip()]
+
+    def _progress(frac: float, msg: str) -> None:
+        if is_cancel_requested(job):
+            raise JobCancelled("用户取消")
+        job.progress = max(0.0, min(1.0, float(frac)))
+        job.message = msg
+
+    job.message = f"EEA fit tag={panel_tag}"
+    job.progress = 0.02
+    with session_scope() as session:
+        repos = build_repositories(session)
+        result = eea.service_fit(
+            repos,
+            panel_tag=panel_tag,
+            scopes=scopes,
+            cluster_modes=cluster_modes,
+            progress_cb=_progress,
+        )
+    job.progress = 1.0
+    job.message = f"EEA fit done saved={result.get('n_saved', 0)}"
+    job.result = result
 
 
 def _run_cache_clear(job: JobRecord, params: dict[str, Any]) -> None:

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { FeatureCatalogItem, PatternEval } from "@/api/client";
+import { featureLabel } from "@/lib/featureLabels";
 
 /** 特征得分配色：>=80 达标绿 / 40~80 一般黄 / <40 偏差红 */
 function simColor(sim: number | undefined): string {
@@ -95,7 +96,7 @@ export function EvalMetricsTable({
           <tr key={row.key} className={row.hardFailed ? "is-hardfail" : ""}>
             <td>
               {row.stage ? <span className="eval-stage-tag">{row.stage}</span> : null}
-              <span className="mono">{row.name}</span>
+              <span title={row.name}>{featureLabel(row.name, catalog)}</span>
               {row.hardFailed ? <span className="eval-hf-badge">硬约束</span> : null}
             </td>
             <td className="eval-feat-desc muted">

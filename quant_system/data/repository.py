@@ -896,7 +896,13 @@ class AbnormalRepository(Protocol):
     ) -> None: ...
     def has_success_run(self, trade_date: date, params_version: str) -> bool: ...
     def top_by_pattern(
-        self, trade_date: date, pattern_id: str, limit: int | None = 10,
+        self,
+        trade_date: date | None,
+        pattern_id: str,
+        limit: int | None = 10,
+        *,
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> list[dict]: ...
     def hits_of(self, code: str, trade_date: Optional[date] = None) -> list[dict]: ...
     def stats(self, trade_date: date) -> dict: ...
@@ -991,18 +997,29 @@ class SQLAAbnormalRepository(_BaseSQLARepo, AbnormalRepository):
 
     def top_by_pattern(
         self,
-        trade_date: date,
+        trade_date: date | None,
         pattern_id: str,
         limit: int | None = 10,
+        *,
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> list[dict]:
+        start = start_date or trade_date
+        end = end_date or trade_date or start
+        if start is None or end is None:
+            return []
+        if start > end:
+            start, end = end, start
         stmt = (
             select(AbnormalSignal)
             .where(
-                AbnormalSignal.trade_date == trade_date,
                 AbnormalSignal.pattern_id == pattern_id,
+                AbnormalSignal.trade_date >= start,
+                AbnormalSignal.trade_date <= end,
             )
             .order_by(
                 AbnormalSignal.pattern_score.desc(),
+                AbnormalSignal.trade_date.desc(),
                 AbnormalSignal.pattern_rank.asc(),
             )
         )

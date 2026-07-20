@@ -180,6 +180,12 @@ export function ClustersPage() {
                     ) : (
                       "—"
                     )}
+                    {" · "}
+                    <Link
+                      to={`/event-stats?profile=${profileId}&cluster=${detailQ.data.cluster.cluster_id}`}
+                    >
+                      用此簇做事件统计
+                    </Link>
                   </p>
                 </div>
                 <table className="data">

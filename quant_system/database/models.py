@@ -690,6 +690,7 @@ class PatternDefinitionRow(Base):
     __tablename__ = "pattern_definition"
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     display_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    display_name_en: Mapped[Optional[str]] = mapped_column(String(128))
     description: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
     published_version: Mapped[Optional[str]] = mapped_column(String(32))
@@ -716,6 +717,103 @@ class PatternDefinitionRevision(Base):
     __table_args__ = (
         UniqueConstraint("pattern_id", "version", name="uq_pattern_def_rev"),
         Index("ix_pattern_def_rev_pid", "pattern_id", "created_at"),
+    )
+
+
+# ============================================================================
+# Event Statistics 域（2 张）— 见 design/13-event-statistics-engine.md
+# ============================================================================
+
+class PatternEventRun(Base):
+    """事件统计 Run：锁定 Entry + Observation 配置 + 聚合缓存。"""
+
+    __tablename__ = "pattern_event_run"
+    run_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    entry_pattern_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    entry_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="observation")
+    outcome_version: Mapped[Optional[str]] = mapped_column(String(32))
+    universe_spec: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    horizon_bars: Mapped[int] = mapped_column(Integer, nullable=False)
+    return_horizons_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
+    calendar: Mapped[str] = mapped_column(String(64), nullable=False, default="ChinaTradingCalendar")
+    anchor_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="t1_close")
+    price_adj: Mapped[str] = mapped_column(String(16), nullable=False, default="qfq")
+    dedup_policy: Mapped[str] = mapped_column(String(32), nullable=False, default="cooldown_h")
+    engine_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    engine_config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregation_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    error_msg: Mapped[Optional[str]] = mapped_column(Text)
+    event_count: Mapped[Optional[int]] = mapped_column(Integer)
+    summary_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    job_id: Mapped[Optional[str]] = mapped_column(String(32))
+    progress: Mapped[Optional[float]] = mapped_column(Numeric(8, 6))
+    progress_msg: Mapped[Optional[str]] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer)
+
+    __table_args__ = (
+        Index("ix_pev_run_pattern", "entry_pattern_id", "created_at"),
+        Index("ix_pev_run_status", "status"),
+        Index("ix_pev_run_job", "job_id"),
+    )
+
+
+class PatternEvent(Base):
+    """单条 Pattern 事件 + Observation 宽列事实指标。"""
+
+    __tablename__ = "pattern_event"
+    event_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True
+    )
+    run_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("pattern_event_run.run_id"), nullable=False
+    )
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    signal_date: Mapped[date] = mapped_column(Date, nullable=False)
+    entry_similarity: Mapped[float] = mapped_column(Numeric(8, 4), nullable=False)
+    match_explain_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    entry_snapshot_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    tags_json: Mapped[Optional[list[Any]]] = mapped_column(JSON)
+
+    return_1: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    return_3: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    return_5: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    return_10: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    return_20: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    return_60: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    return_horizon: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    mfe: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    mae: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    max_drawdown: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    volatility: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    bull_ratio: Mapped[Optional[float]] = mapped_column(Numeric(12, 6))
+    up_days: Mapped[Optional[int]] = mapped_column(Integer)
+    continuous_up_days: Mapped[Optional[int]] = mapped_column(Integer)
+    highest_day: Mapped[Optional[int]] = mapped_column(Integer)
+    lowest_day: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_mfe: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_mae: Mapped[Optional[int]] = mapped_column(Integer)
+    forward_bars_available: Mapped[Optional[int]] = mapped_column(Integer)
+    forward_status: Mapped[str] = mapped_column(String(16), nullable=False, default="insufficient")
+
+    extra_metrics_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    outcome_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "code", "signal_date", name="uq_pattern_event_run_code_date"),
+        Index("ix_pev_run_date", "run_id", "signal_date"),
+        Index("ix_pev_run_sim", "run_id", "entry_similarity"),
+        Index("ix_pev_run_ret5", "run_id", "return_5"),
+        Index("ix_pev_run_ret10", "run_id", "return_10"),
+        Index("ix_pev_run_mfe", "run_id", "mfe"),
+        Index("ix_pev_run_mae", "run_id", "mae"),
+        Index("ix_pev_run_fwd", "run_id", "forward_status"),
     )
 
 
@@ -770,6 +868,120 @@ class DataQualityCheck(Base):
 
 
 # ============================================================================
+# Earnings Event Analytics（3 张）
+# ============================================================================
+
+class EarningsDisclosureEvent(Base):
+    """业绩披露原始事件（Event Builder 产出）。"""
+
+    __tablename__ = "earnings_disclosure_event"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    report_period: Mapped[Optional[date]] = mapped_column(Date)
+    event_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(512))
+    parent_np: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
+    parent_np_yoy: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 6))
+    predict_type: Mapped[Optional[str]] = mapped_column(String(32))
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="em_notice")
+    raw_extra_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "code", "event_date", "event_kind", "report_period",
+            name="uq_eea_event_identity",
+        ),
+        Index("ix_eea_event_date", "event_date"),
+        Index("ix_eea_event_kind_date", "event_kind", "event_date"),
+        Index("ix_eea_event_code_date", "code", "event_date"),
+    )
+
+
+class EarningsEventPanel(Base):
+    """Event Panel：Raw + Derived + Targets 宽表。"""
+
+    __tablename__ = "earnings_event_panel"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    report_period: Mapped[Optional[date]] = mapped_column(Date)
+    event_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    # Raw
+    parent_np: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
+    parent_np_yoy: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 6))
+    predict_type: Mapped[Optional[str]] = mapped_column(String(32))
+    title: Mapped[Optional[str]] = mapped_column(String(512))
+    raw_extra_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    # Derived
+    annualized_parent_np: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
+    pe_ttm: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    mcap: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
+    ln_mcap: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
+    ey_event: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 8))
+    ey_event_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
+    pe_event: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    pe_rel: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
+    yoy_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
+    range_pos_250d: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
+    range_pos_750d: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
+    dist_to_high_250d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 6))
+    cluster_run_id: Mapped[Optional[str]] = mapped_column(String(64))
+    cluster_id: Mapped[Optional[int]] = mapped_column(Integer)
+    valuation_date: Mapped[Optional[date]] = mapped_column(Date)
+    feature_asof_date: Mapped[Optional[date]] = mapped_column(Date)
+    derived_extra_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    # Targets
+    ret_5d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 6))
+    ret_10d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 6))
+    ret_20d: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 6))
+    target_extra_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    # Meta
+    panel_tag: Mapped[str] = mapped_column(String(64), nullable=False, default="default")
+    built_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_eea_panel_tag_date", "panel_tag", "event_date"),
+        Index("ix_eea_panel_kind", "panel_tag", "event_kind"),
+        Index("ix_eea_panel_cluster", "panel_tag", "cluster_run_id", "cluster_id"),
+        Index("ix_eea_panel_event", "event_id"),
+    )
+
+
+class EarningsAnalyticsModel(Base):
+    """EEA 拟合结果（Regression + Fair Value 元数据）。"""
+
+    __tablename__ = "earnings_analytics_model"
+    model_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    fitted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    panel_tag: Mapped[str] = mapped_column(String(64), nullable=False, default="default")
+    model_scope: Mapped[str] = mapped_column(String(16), nullable=False)  # all|interim|annual
+    cluster_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
+    cluster_id: Mapped[Optional[int]] = mapped_column(Integer)
+    cluster_run_id: Mapped[Optional[str]] = mapped_column(String(64))
+    backend_id: Mapped[str] = mapped_column(String(32), nullable=False, default="ols")
+    estimator_id: Mapped[str] = mapped_column(String(32), nullable=False, default="median_ey")
+    feature_cols_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
+    filter_spec_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON)
+    n_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    regression_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    fair_value_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ready")
+
+    __table_args__ = (
+        Index("ix_eea_model_scope", "panel_tag", "model_scope", "cluster_mode"),
+        Index("ix_eea_model_fitted", "fitted_at"),
+    )
+
+
+# ============================================================================
 # 导出清单（便于 migrations 使用）
 # ============================================================================
 
@@ -800,8 +1012,12 @@ ALL_MODELS = [
     AbnormalSignal, AbnormalRun,
     # Pattern Definition
     PatternDefinitionRow, PatternDefinitionRevision,
+    # Event Statistics
+    PatternEventRun, PatternEvent,
+    # Earnings Event Analytics
+    EarningsDisclosureEvent, EarningsEventPanel, EarningsAnalyticsModel,
     # 系统
     JobRunLog, DataSyncState, DataQualityCheck,
 ]
 
-assert len(ALL_MODELS) == 32, "表数量应为 32"
+assert len(ALL_MODELS) == 37, "表数量应为 37"

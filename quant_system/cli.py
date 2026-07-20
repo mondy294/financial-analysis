@@ -39,6 +39,7 @@ cache_app = typer.Typer(help="缓存管理")
 relationship_app = typer.Typer(help="股票关系层（相关度/联动）")
 similarity_app = typer.Typer(help="Similarity Framework（边+聚类编排）")
 abnormal_app = typer.Typer(help="异动 Pattern Engine（分模式检测）")
+event_stats_app = typer.Typer(help="Event Statistics Engine（事件事实统计）")
 
 app.add_typer(update_app, name="update")
 app.add_typer(pool_app, name="pool")
@@ -47,6 +48,7 @@ app.add_typer(cache_app, name="cache")
 app.add_typer(relationship_app, name="relationship")
 app.add_typer(similarity_app, name="similarity")
 app.add_typer(abnormal_app, name="abnormal")
+app.add_typer(event_stats_app, name="event-stats")
 
 console = Console()
 
@@ -1769,6 +1771,122 @@ def abnormal_stats_cmd(
             str(s.get("L1", 0)),
         )
     console.print(table)
+
+
+# ============================================================================
+# Event Statistics
+# ============================================================================
+
+@event_stats_app.command("run")
+def event_stats_run_cmd(
+    pattern: Annotated[str, typer.Option("--pattern", help="Entry Pattern ID")] = "RANGE_BREAKOUT",
+    start: Annotated[str, typer.Option("--start", help="YYYY-MM-DD")] = ...,
+    end: Annotated[str, typer.Option("--end", help="YYYY-MM-DD")] = ...,
+    codes: Annotated[
+        Optional[str],
+        typer.Option("--codes", help="逗号分隔代码；最小 1 只。与 --pool 互斥"),
+    ] = None,
+    pool: Annotated[Optional[str], typer.Option("--pool", help="股票池代码")] = None,
+    horizon: Annotated[int, typer.Option("--horizon", help="观测窗交易日数")] = 20,
+    dedup: Annotated[str, typer.Option("--dedup", help="none | cooldown_h")] = "cooldown_h",
+    day_workers: Annotated[
+        int, typer.Option("--day-workers", help="按交易日并行数（默认 6）")
+    ] = 6,
+    match_workers: Annotated[
+        Optional[int],
+        typer.Option("--match-workers", help="日内股票匹配并行（默认 8）"),
+    ] = 8,
+    observe_workers: Annotated[
+        int, typer.Option("--observe-workers", help="远期指标计算并行（默认 8）")
+    ] = 8,
+) -> None:
+    """跑事件统计：Discovery + Observation + 落库 + 聚合报告。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.database.migrations import ensure_schema_columns
+    from quant_system.eventstats.runner import EventStatsRequest, run_event_stats
+    from quant_system.infra.db import session_scope
+
+    _boot()
+    ensure_schema_columns()
+    start_d = _parse_date(start)
+    end_d = _parse_date(end)
+    if codes and pool:
+        raise typer.BadParameter("--codes 与 --pool 不能同时指定")
+    if codes:
+        universe = {
+            "kind": "codes",
+            "codes": [c.strip().upper() for c in codes.split(",") if c.strip()],
+        }
+    elif pool:
+        universe = {"kind": "pool", "pool": pool}
+    else:
+        universe = {"kind": "all"}
+
+    def _progress(p: float, msg: str) -> None:
+        console.print(f"[dim]{p*100:5.1f}%[/dim] {msg}")
+
+    with session_scope() as session:
+        repos = build_repositories(session)
+        report = run_event_stats(
+            repos,
+            EventStatsRequest(
+                pattern_id=pattern.strip().upper(),
+                start=start_d,
+                end=end_d,
+                universe_spec=universe,
+                horizon_bars=horizon,
+                dedup_policy=dedup,
+                day_concurrency=day_workers,
+                match_concurrency=match_workers,
+                observe_concurrency=observe_workers,
+            ),
+            progress_cb=_progress,
+        )
+    console.print(
+        f"[green]SUCCESS[/green] run_id={report.run_id} "
+        f"events={report.event_count} duration={report.duration_ms}ms"
+    )
+    cov = (report.summary or {}).get("coverage") or {}
+    console.print(
+        f"stocks={cov.get('stock_count')} "
+        f"status={cov.get('forward_status_counts')}"
+    )
+
+
+@event_stats_app.command("report")
+def event_stats_report_cmd(
+    run_id: Annotated[str, typer.Option("--run-id")],
+) -> None:
+    """打印某次 Run 的 summary 统计。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.eventstats import store
+    from quant_system.infra.db import session_scope
+
+    _boot()
+    with session_scope() as session:
+        repos = build_repositories(session)
+        run = store.get_run(repos.kline._session, run_id)  # type: ignore[attr-defined]
+        if run is None:
+            console.print(f"[red]run not found: {run_id}[/red]")
+            raise typer.Exit(1)
+        data = store.run_to_dict(run)
+    console.print_json(data=data.get("summary") or {})
+
+
+@event_stats_app.command("reaggregate")
+def event_stats_reaggregate_cmd(
+    run_id: Annotated[str, typer.Option("--run-id")],
+) -> None:
+    """仅重算 summary_json（不重跑 Discovery）。"""
+    from quant_system.data.repository import build_repositories
+    from quant_system.eventstats.runner import reaggregate_run
+    from quant_system.infra.db import session_scope
+
+    _boot()
+    with session_scope() as session:
+        repos = build_repositories(session)
+        summary = reaggregate_run(repos, run_id)
+    console.print_json(data=summary)
 
 
 if __name__ == "__main__":

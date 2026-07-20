@@ -16,7 +16,20 @@ def heavy_job_running() -> JobRecord | None:
             if spec is not None and spec.heavy:
                 return job
             # pattern.scan / pattern.dry_scan 等也算重任务
-            if job.kind.startswith(("update.", "pattern.", "relationship.", "pipeline", "feature", "select", "report", "quality", "init_db")):
+            if job.kind.startswith(
+                (
+                    "update.",
+                    "pattern.",
+                    "relationship.",
+                    "pipeline",
+                    "feature",
+                    "select",
+                    "report",
+                    "quality",
+                    "init_db",
+                    "eea.",
+                )
+            ):
                 return job
     return None
 
@@ -43,7 +56,7 @@ def run_task(task_id: str, params: dict[str, Any] | None = None) -> dict[str, An
     def _fn(job: JobRecord) -> None:
         execute_task(job, task_id, params)
 
-    job = submit_job(task_id, _fn)
+    job = submit_job(task_id, _fn, params=params)
     return job_to_dict(job)
 
 

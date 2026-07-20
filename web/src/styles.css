@@ -148,6 +148,71 @@ select {
   background: var(--bg-muted);
 }
 
+.stock-picker {
+  position: relative;
+  min-width: 200px;
+}
+
+.stock-picker > input {
+  width: 100%;
+  min-width: 180px;
+}
+
+.stock-picker-dropdown {
+  z-index: 40;
+  max-height: 260px;
+}
+
+/* portal 到 body，避免被 .panel { overflow:hidden } 裁切 */
+.stock-picker-dropdown-portal {
+  position: fixed;
+  right: auto;
+  z-index: 1200;
+  max-height: min(280px, 45vh);
+}
+
+.stock-picker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.stock-picker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.82rem;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.stock-picker-chip-x {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 0.15rem;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.stock-picker-chip-x:hover {
+  color: var(--danger, #b42318);
+}
+
+.stock-picker-single {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 180px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+}
+
 .page {
   padding: 1.25rem;
   max-width: 1400px;
@@ -297,6 +362,22 @@ table.data th {
   background: var(--bg-muted);
   position: sticky;
   top: 0;
+}
+
+button.sort-th {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button.sort-th:hover {
+  color: var(--text);
 }
 
 table.data tr:hover td {
@@ -567,7 +648,7 @@ table.data tr:hover td {
 }
 
 .chart-main {
-  height: 420px;
+  height: 520px;
 }
 
 .chart-main-wrap {
@@ -1385,4 +1466,243 @@ table.data-table tr.row-active {
   font-size: 0.75rem;
   line-height: 1.5;
   color: var(--text-muted);
+}
+
+/* —— 事件统计前端 IA —— */
+.es-launch-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.es-section-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0.85rem 0 0.4rem;
+  font-weight: 600;
+}
+
+.es-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.65rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.es-pager-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.es-narrative {
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-muted);
+  border-radius: 8px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.es-chart-note {
+  margin: 0;
+  padding: 0 1rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.es-chart-svg {
+  max-height: 280px;
+  display: block;
+}
+
+.es-axis {
+  stroke: var(--border, #c5ced6);
+  stroke-width: 1;
+}
+
+.es-axis-dash {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.55;
+}
+
+.es-bar-pos {
+  fill: var(--accent);
+}
+
+.es-bar-neg {
+  fill: #c23b22;
+}
+
+.es-tick {
+  font-size: 11px;
+  fill: var(--text-muted);
+}
+
+.es-val {
+  font-size: 10px;
+  fill: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.es-legend {
+  font-size: 10px;
+  fill: var(--text-muted);
+}
+
+.es-win-line {
+  stroke: #5c6b7a;
+  stroke-width: 2;
+}
+
+.es-win-dot {
+  fill: #5c6b7a;
+}
+
+.es-spread-band {
+  stroke: var(--accent);
+  stroke-width: 7;
+  stroke-linecap: round;
+  opacity: 0.35;
+}
+
+.es-spread-end {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.es-spread-med {
+  fill: var(--accent);
+}
+
+.es-mean-line {
+  stroke: var(--text);
+  stroke-width: 1.5;
+  opacity: 0.65;
+}
+
+.es-fold {
+  margin-bottom: 0.75rem;
+}
+
+.es-fold > summary {
+  cursor: pointer;
+  padding: 0.65rem 1rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.es-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.es-fold[open] > summary {
+  border-radius: 8px 8px 0 0;
+  border-bottom: none;
+}
+
+.es-fold-body {
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 0.5rem 0 0;
+  background: var(--bg-elev);
+}
+
+.es-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.es-compare-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.es-compare-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  max-width: 100%;
+}
+
+.es-compare-chip-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.es-compare-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.es-compare-table {
+  min-width: 100%;
+}
+
+.es-compare-table th {
+  white-space: nowrap;
+}
+
+.es-compare-run-col {
+  min-width: 7.5rem;
+  text-align: left !important;
+  vertical-align: top;
+}
+
+.es-compare-metric-cell {
+  position: relative;
+  vertical-align: top !important;
+  min-width: 7.5rem;
+}
+
+.es-compare-metric-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.es-compare-metric-k {
+  display: inline-block;
+  width: 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  margin-right: 0.25rem;
+}
+
+.es-compare-col-tint {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  opacity: 0.55;
+  pointer-events: none;
 }

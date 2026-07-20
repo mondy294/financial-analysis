@@ -38,6 +38,7 @@ export const api = {
       Array<{
         id: string;
         display_name: string;
+        display_name_en?: string;
         version: string;
         threshold: number;
         description: string;
@@ -56,8 +57,175 @@ export const api = {
       industry_name?: string;
       list_date?: string;
       is_st: boolean;
-      market_cap?: number;
+      market_cap?: number | null;
+      float_market_cap?: number | null;
+      pe_ttm?: number | null;
+      pe_static?: number | null;
+      pb?: number | null;
+      ps_ttm?: number | null;
+      valuation_date?: string | null;
     }>(`/api/stocks/${encodeURIComponent(code)}`),
+  /** 按公告日/区间的财务披露（预告/快报/定期报告） */
+  disclosures: (opts: {
+    startDate: string;
+    endDate: string;
+    mainOnly?: boolean;
+    enrichForecast?: boolean;
+    /** 公告后涨跌；默认 false，避免扫 K 线拖慢列表 */
+    enrichReturns?: boolean;
+    category?: string;
+  }) => {
+    const params = new URLSearchParams({
+      start_date: opts.startDate,
+      end_date: opts.endDate,
+    });
+    if (opts.mainOnly) params.set("main_only", "true");
+    if (opts.enrichForecast) params.set("enrich_forecast", "true");
+    if (opts.enrichReturns) params.set("enrich_returns", "true");
+    if (opts.category) params.set("category", opts.category);
+    return request<{
+      start_date: string;
+      end_date: string;
+      notice_date?: string;
+      main_only: boolean;
+      enrich_forecast?: boolean;
+      enrich_returns?: boolean;
+      total: number;
+      counts: Record<string, number>;
+      items: Array<{
+        code: string;
+        name: string;
+        board?: string;
+        board_label?: string;
+        category: string;
+        category_label: string;
+        notice_type: string;
+        title: string;
+        notice_date: string;
+        url?: string | null;
+        parent_np_yoy?: number | null;
+        parent_np_value?: number | null;
+        predict_type?: string | null;
+        report_period?: string | null;
+        parent_np_sq?: number | null;
+        parent_np_qoq?: number | null;
+        parent_np_qoq_prev?: number | null;
+        parent_np_qoq_delta?: number | null;
+        return_1d?: number | null;
+        return_5d?: number | null;
+        return_10d?: number | null;
+        return_since_notice?: number | null;
+        /** 最新总市值，单位亿元 */
+        market_cap?: number | null;
+      }>;
+    }>(`/api/stocks/disclosures?${params}`);
+  },
+  /** 中报预告 × 估值 × 公告后涨跌 OLS 因子分析 */
+  disclosuresFactorAnalysis: (opts: {
+    startDate: string;
+    endDate: string;
+    mainOnly?: boolean;
+  }) => {
+    const params = new URLSearchParams({
+      start_date: opts.startDate,
+      end_date: opts.endDate,
+    });
+    if (opts.mainOnly !== false) params.set("main_only", "true");
+    else params.set("main_only", "false");
+    return request<{
+      start_date: string;
+      end_date: string;
+      main_only: boolean;
+      candidates: number;
+      dropped_n: number;
+      dropped: Array<{ code: string; reason: string }>;
+      drop_hint?: string | null;
+      ok: boolean;
+      message?: string | null;
+      n: number;
+      feature_keys: string[];
+      feature_labels: Record<string, string>;
+      intercept: number | null;
+      r_squared: number | null;
+      std_intercept: number | null;
+      std_r_squared: number | null;
+      coefficients: Array<{
+        key: string;
+        label: string;
+        coef: number;
+        std_coef: number;
+        mean: number;
+        std: number;
+      }>;
+      formula: {
+        text: string;
+        intercept: number;
+        coefs: Record<string, number>;
+        means: Record<string, number>;
+        stds: Record<string, number>;
+        note: string;
+      } | null;
+      corr: Record<string, Record<string, number | null>>;
+      groups: {
+        up_n: number;
+        down_n: number;
+        flat_n: number;
+        up_rate: number;
+        down_rate: number;
+        up_means: Record<string, number | null>;
+        down_means: Record<string, number | null>;
+        diff_down_minus_up: Record<string, number | null>;
+      } | null;
+      rows: Array<{
+        code: string;
+        name: string;
+        notice_date: string;
+        predict_type?: string | null;
+        report_period?: string | null;
+        valuation_date?: string | null;
+        pe_ttm: number;
+        market_cap: number;
+        ln_mcap: number;
+        parent_np_h1: number;
+        parent_np_annualized: number;
+        parent_np_yoy: number;
+        parent_np_yoy_pct: number;
+        forecast_pe: number;
+        forecast_ey: number;
+        forecast_ey_pct: number;
+        return_since_notice: number;
+        return_pct: number;
+        fitted_return_pct?: number | null;
+        residual_pct?: number | null;
+      }>;
+    }>(`/api/stocks/disclosures/factor-analysis?${params}`);
+  },
+  earningsFairAnchor: (code: string, lookbackDays = 5) =>
+    request<{
+      available: boolean;
+      reason?: string | null;
+      detail?: string | null;
+      code: string;
+      lookback_days: number;
+      event?: {
+        event_date?: string;
+        event_kind?: string;
+        parent_np?: number | null;
+        parent_np_yoy?: number | null;
+        title?: string | null;
+        predict_type?: string | null;
+      } | null;
+      model_scope?: string | null;
+      ref_close?: number | null;
+      ref_date?: string | null;
+      fair_price?: number | null;
+      premium_pct?: number | null;
+      implied_fair_mcap?: number | null;
+      expected_return_20d?: number | null;
+      price_at_expected_20d?: number | null;
+    }>(
+      `/api/stocks/${encodeURIComponent(code)}/earnings-fair-anchor?lookback_days=${lookbackDays}`,
+    ),
   kline: (code: string, limit = 250) =>
     request<
       Array<{
@@ -107,8 +275,47 @@ export const api = {
       amount?: number;
       pct_change?: number;
       features: Record<string, number | boolean | null>;
+      pe_ttm?: number | null;
+      pe_static?: number | null;
+      pb?: number | null;
+      ps_ttm?: number | null;
+      market_cap?: number | null;
+      float_market_cap?: number | null;
+      valuation_date?: string | null;
     }>(`/api/stocks/${encodeURIComponent(code)}/snapshot${q}`);
   },
+  /** 近 N 年年报主要财务指标 + 季报/中报 + 业绩预告/快报 */
+  financials: (code: string, years = 5) =>
+    request<StockFinancials>(
+      `/api/stocks/${encodeURIComponent(code)}/financials?years=${years}`,
+    ),
+  /** 个股近期财务公告（与披露页同源） */
+  stockDisclosures: (code: string, aroundDate?: string, lookbackDays = 21) => {
+    const params = new URLSearchParams({ lookback_days: String(lookbackDays) });
+    if (aroundDate) params.set("around_date", aroundDate);
+    return request<{
+      code: string;
+      name: string;
+      start_date: string;
+      end_date: string;
+      total: number;
+      items: Array<{
+        code: string;
+        name: string;
+        category: string;
+        category_label: string;
+        notice_type: string;
+        title: string;
+        notice_date: string;
+        url?: string | null;
+      }>;
+    }>(`/api/stocks/${encodeURIComponent(code)}/disclosures?${params}`);
+  },
+  /** @deprecated 同 financials */
+  parentProfit: (code: string, years = 5) =>
+    request<StockFinancials>(
+      `/api/stocks/${encodeURIComponent(code)}/financials?years=${years}`,
+    ),
   relationships: (
     code: string,
     opts?: { tradeDate?: string; window?: string; limit?: number },
@@ -146,10 +353,19 @@ export const api = {
       `/api/stocks/${encodeURIComponent(code)}/cluster?${params}`,
     );
   },
-  /** limit=0 表示全部命中（相似度降序） */
-  patternTop: (patternId: string, tradeDate?: string, limit = 0) => {
+  /** limit=0 表示全部命中（相似度降序）；可传 start/end 查区间 */
+  patternTop: (
+    patternId: string,
+    tradeDate?: string,
+    limit = 0,
+    range?: { start?: string; end?: string },
+  ) => {
     const params = new URLSearchParams({ limit: String(limit) });
-    if (tradeDate) params.set("trade_date", tradeDate);
+    if (range?.start) params.set("start_date", range.start);
+    if (range?.end) params.set("end_date", range.end);
+    if (!range?.start && !range?.end && tradeDate) {
+      params.set("trade_date", tradeDate);
+    }
     return request<PatternHit[]>(
       `/api/patterns/${encodeURIComponent(patternId)}/top?${params}`,
     );
@@ -171,6 +387,8 @@ export const api = {
     }),
   scanPatterns: (body: {
     trade_date?: string;
+    start_date?: string;
+    end_date?: string;
     pattern_ids?: string[];
     force?: boolean;
   }) =>
@@ -178,7 +396,68 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  eventStatsRun: (body: {
+    pattern_id: string;
+    start: string;
+    end: string;
+    codes?: string;
+    universe?: {
+      kind: string;
+      codes?: string[];
+      pool?: string;
+      profile?: string;
+      target_samples?: number;
+      max_total?: number;
+      per_cluster?: number;
+      min_cluster_size?: number;
+      seed?: number;
+      prefer?: string;
+    };
+    horizon_bars?: number;
+    return_horizons?: number[];
+    dedup_policy?: string;
+    calendar?: string;
+    day_concurrency?: number;
+    match_concurrency?: number;
+    observe_concurrency?: number;
+  }) =>
+    request<Job>("/api/event-stats/runs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  eventStatsRuns: (limit = 10, offset = 0) =>
+    request<{ total: number; limit: number; offset: number; runs: EventStatsRun[] }>(
+      `/api/event-stats/runs?limit=${limit}&offset=${offset}`,
+    ),
+  eventStatsRunDetail: (runId: string) =>
+    request<EventStatsRun>(`/api/event-stats/runs/${encodeURIComponent(runId)}`),
+  cancelEventStatsRun: (runId: string) =>
+    request<EventStatsRun & { cancel_mode?: string; job_id?: string }>(
+      `/api/event-stats/runs/${encodeURIComponent(runId)}/cancel`,
+      { method: "POST" },
+    ),
+  deleteEventStatsRun: (runId: string) =>
+    request<{ ok: boolean; run_id: string }>(
+      `/api/event-stats/runs/${encodeURIComponent(runId)}`,
+      { method: "DELETE" },
+    ),
+  eventStatsEvents: (
+    runId: string,
+    opts?: { limit?: number; offset?: number; order_by?: string; desc?: boolean },
+  ) => {
+    const params = new URLSearchParams({
+      limit: String(opts?.limit ?? 100),
+      offset: String(opts?.offset ?? 0),
+      order_by: opts?.order_by ?? "entry_similarity",
+      desc: String(opts?.desc ?? true),
+    });
+    return request<{ total: number; events: EventStatsEvent[] }>(
+      `/api/event-stats/runs/${encodeURIComponent(runId)}/events?${params}`,
+    );
+  },
   job: (jobId: string) => request<Job>(`/api/jobs/${encodeURIComponent(jobId)}`),
+  cancelJob: (jobId: string) =>
+    request<Job>(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" }),
   jobs: (limit = 20) => request<Job[]>(`/api/jobs?limit=${limit}`),
   signals: (tradeDate?: string, limit = 50) => {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -254,6 +533,124 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  /** Earnings Event Analytics */
+  eeaModels: (panelTag?: string) => {
+    const q = panelTag ? `?panel_tag=${encodeURIComponent(panelTag)}` : "";
+    return request<
+      Array<{
+        model_id: string;
+        fitted_at: string;
+        panel_tag: string;
+        model_scope: string;
+        cluster_mode: string;
+        cluster_id?: number | null;
+        backend_id: string;
+        estimator_id: string;
+        n_samples: number;
+        metrics: Record<string, number | null>;
+        feature_cols: string[];
+      }>
+    >(`/api/analysis/earnings-events/models${q}`);
+  },
+  eeaModelDetail: (modelId: string) =>
+    request<Record<string, unknown>>(
+      `/api/analysis/earnings-events/models/${encodeURIComponent(modelId)}`,
+    ),
+  eeaPanelSummary: (panelTag = "default") =>
+    request<{
+      panel_tag: string;
+      n_rows: number;
+      n_with_ret_20d: number;
+      n_with_ey: number;
+      kinds: Record<string, number>;
+    }>(`/api/analysis/earnings-events/panel/summary?panel_tag=${encodeURIComponent(panelTag)}`),
+  eeaPanelByCluster: (panelTag = "default") =>
+    request<{
+      panel_tag: string;
+      n_rows: number;
+      global_mean_ret_20d: number | null;
+      clusters: Array<{
+        cluster_id: number;
+        n: number;
+        up_rate_20d: number | null;
+        mean_ret_5d: number | null;
+        mean_ret_10d: number | null;
+        mean_ret_20d: number | null;
+        mean_ey_event: number | null;
+        excess_ret_20d: number | null;
+      }>;
+    }>(`/api/analysis/earnings-events/panel/by-cluster?panel_tag=${encodeURIComponent(panelTag)}`),
+  eeaBuildPanel: (body: {
+    start_date?: string;
+    end_date?: string;
+    panel_tag?: string;
+    build_events?: boolean;
+    main_only?: boolean;
+    cluster_run_id?: string;
+  }) =>
+    request<Record<string, unknown>>("/api/analysis/earnings-events/build-panel", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  eeaFit: (body?: {
+    panel_tag?: string;
+    scopes?: string[];
+    cluster_modes?: string[];
+  }) =>
+    request<Record<string, unknown>>("/api/analysis/earnings-events/fit", {
+      method: "POST",
+      body: JSON.stringify(body || {}),
+    }),
+  eeaScore: (body: {
+    code: string;
+    event_kind: string;
+    parent_np: number;
+    parent_np_yoy?: number | null;
+    report_period?: string | null;
+    as_of?: string | null;
+    model_scope?: string;
+    use_cluster?: boolean;
+    model_id?: string | null;
+    panel_tag?: string;
+  }) =>
+    request<{
+      ok: boolean;
+      unavailable_reason?: string;
+      code?: string;
+      as_of?: string;
+      event_kind?: string;
+      features?: Record<string, number | string | null>;
+      prediction?: {
+        expected_return_5d?: number | null;
+        expected_return_10d?: number | null;
+        expected_return_20d?: number | null;
+        fair_ey?: number | null;
+        fair_pe?: number | null;
+        implied_fair_mcap?: number | null;
+        premium_pct?: number | null;
+        prediction_meta?: Record<string, unknown>;
+      };
+      score?: {
+        mispricing_score?: number | null;
+        confidence?: number | null;
+        percentile?: number | null;
+      };
+      model?: Record<string, unknown>;
+      explain?: {
+        feature_contributions?: Array<{
+          key: string;
+          value: number;
+          coef: number;
+          contrib: number;
+          rank: number;
+        }>;
+        natural_language?: string | null;
+      };
+    }>("/api/analysis/earnings-events/score", {
+      method: "POST",
+      body: JSON.stringify({ ...body, with_explain: true }),
+    }),
 };
 
 export type TargetValueJson = {
@@ -271,6 +668,7 @@ export type DefinitionBody = {
   id: string;
   version: string;
   display_name: string;
+  display_name_en?: string;
   description: string;
   threshold: number;
   history_bars?: number | null;
@@ -306,6 +704,7 @@ export type DefinitionBody = {
 export type DefinitionListItem = {
   id: string;
   display_name: string;
+  display_name_en?: string;
   description: string;
   status: string;
   published_version: string | null;
@@ -318,6 +717,7 @@ export type DefinitionListItem = {
 export type DefinitionEditable = {
   id: string;
   display_name: string;
+  display_name_en?: string;
   description: string;
   status: string;
   published_version: string | null;
@@ -345,6 +745,8 @@ export type RevisionMeta = {
 
 export type FeatureCatalogItem = {
   name: string;
+  /** 中文短名（编辑器展示用） */
+  label?: string;
   category: string;
   kind: string;
   description: string;
@@ -371,6 +773,69 @@ export type PatternHit = {
   distance: number;
   hard_failed: string[];
   metrics_values: Record<string, unknown>;
+  /** 信号日后第 1/3/5 个交易日相对信号收盘的前复权收益 */
+  return_1?: number | null;
+  return_3?: number | null;
+  return_5?: number | null;
+};
+
+export type EarningsGuidanceMetric = {
+  metric: string;
+  predict_type?: string | null;
+  value_lower?: number | null;
+  value_upper?: number | null;
+  value_mid?: number | null;
+  yoy_lower?: number | null;
+  yoy_upper?: number | null;
+  yoy_mid?: number | null;
+  content?: string | null;
+  reason?: string | null;
+  preyear_value?: number | null;
+};
+
+export type EarningsGuidance = {
+  kind: "forecast" | "express" | string;
+  report_period: string;
+  report_name?: string;
+  notice_date?: string | null;
+  metrics?: EarningsGuidanceMetric[];
+  revenue?: number | null;
+  revenue_yoy?: number | null;
+  parent_net_profit?: number | null;
+  parent_net_profit_yoy?: number | null;
+  roe?: number | null;
+  /** 预告/快报公告日 PE(TTM) */
+  pe_ttm?: number | null;
+  pe_static?: number | null;
+  valuation_date?: string | null;
+};
+
+export type StockFinancials = {
+  code: string;
+  name: string;
+  source: string;
+  years: number;
+  note?: string;
+  points: Array<{
+    year: number;
+    report_period: string;
+    report_name?: string;
+    notice_date?: string | null;
+    is_annual?: boolean;
+    revenue?: number | null;
+    revenue_yoy?: number | null;
+    parent_net_profit?: number | null;
+    parent_net_profit_yoy?: number | null;
+    ded_net_profit?: number | null;
+    ded_net_profit_yoy?: number | null;
+    roe?: number | null;
+    yoy?: number | null;
+    /** 报告公告日 PE(TTM) */
+    pe_ttm?: number | null;
+    pe_static?: number | null;
+    valuation_date?: string | null;
+  }>;
+  guidance?: EarningsGuidance[];
 };
 
 export type PatternEval = {
@@ -403,6 +868,57 @@ export type Job = {
   message?: string | null;
   error?: string | null;
   result?: Record<string, unknown> | null;
+  params?: Record<string, unknown> | null;
+  cancel_requested?: boolean;
+};
+
+export type EventStatsRun = {
+  run_id: string;
+  entry_pattern_id: string;
+  entry_version: string;
+  outcome_mode: string;
+  universe_spec: Record<string, unknown>;
+  start_date: string;
+  end_date: string;
+  horizon_bars: number;
+  return_horizons: number[];
+  dedup_policy?: string;
+  calendar?: string;
+  status: string;
+  event_count?: number | null;
+  summary?: Record<string, unknown> | null;
+  duration_ms?: number | null;
+  error_msg?: string | null;
+  aggregation_version?: string;
+  engine_config_hash?: string;
+  job_id?: string | null;
+  progress?: number | null;
+  progress_msg?: string | null;
+  job_alive?: boolean;
+  live_job?: Job | null;
+  created_at?: string | null;
+};
+
+export type EventStatsEvent = {
+  event_id: number;
+  code: string;
+  signal_date: string;
+  entry_similarity: number;
+  tags?: string[];
+  return_1?: number | null;
+  return_3?: number | null;
+  return_5?: number | null;
+  return_10?: number | null;
+  return_20?: number | null;
+  return_60?: number | null;
+  return_horizon?: number | null;
+  mfe?: number | null;
+  mae?: number | null;
+  max_drawdown?: number | null;
+  volatility?: number | null;
+  bull_ratio?: number | null;
+  forward_status: string;
+  match_explain?: Record<string, unknown> | null;
 };
 
 export type SignalRow = {

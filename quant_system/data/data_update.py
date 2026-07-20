@@ -627,11 +627,11 @@ class FinancialUpdater(BaseUpdater):
 class ValuationUpdater(BaseUpdater):
     """日频估值更新：东财 stock_value_em 为主、百度兜底。
 
-    只保留每只股票最近 KEEP_DAYS 个交易日的估值行（as_of 回溯足够），
-    避免整张历史（2000+ 行/股）撑爆库。顺带把最新总市值回写 stock_basic。
+    KEEP_DAYS=None 表示保留全量历史（Earnings Event Analytics 需要公告日 as_of）。
+    若设为正整数，则只保留每只股票最近 N 个交易日。顺带回写 stock_basic.market_cap。
     """
     source_name = "akshare.valuation"
-    KEEP_DAYS = 10
+    KEEP_DAYS: int | None = None
 
     def __init__(
         self, provider: FinancialProvider, repos: Repositories, settings: Settings | None = None,
@@ -729,8 +729,9 @@ class ValuationUpdater(BaseUpdater):
                                 sk=stats.skipped,
                             )
                         else:
-                            # 只留最近 KEEP_DAYS 行
-                            df = df.sort_values("trade_date").tail(self.KEEP_DAYS)
+                            df = df.sort_values("trade_date")
+                            if self.KEEP_DAYS is not None and self.KEEP_DAYS > 0:
+                                df = df.tail(self.KEEP_DAYS)
                             records = df.to_dict(orient="records")
                             stats.inserted += self.repos.valuation.upsert_valuations(records)
                             # 顺带回写 stock_basic.market_cap（最新一行，单位=亿元）

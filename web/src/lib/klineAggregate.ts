@@ -60,5 +60,6 @@ export function aggregateKline(bars: ChartBar[], period: KlinePeriod): ChartBar[
 export function defaultVisibleCount(period: KlinePeriod): number {
   if (period === "week") return 52;
   if (period === "month") return 36;
-  return 80;
+  // 日 K 默认约 40 根，避免窗口过长把蜡烛压扁
+  return 40;
 }

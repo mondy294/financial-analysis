@@ -27,6 +27,10 @@ class PatternHitOut(BaseModel):
     distance: float = 0.0
     hard_failed: list[str] = []
     metrics_values: dict[str, Any] = {}
+    # 命中后短期收益（信号日收盘 → T+h 收盘，前复权；不足为 null）
+    return_1: float | None = None
+    return_3: float | None = None
+    return_5: float | None = None
 
 
 class PatternEvalOut(BaseModel):

@@ -5,6 +5,7 @@ import {
   type TaskParamSpec,
   type TaskSpec,
 } from "@/api/client";
+import { StockPicker } from "@/components/StockPicker";
 
 function defaultParams(task: TaskSpec, tradeDate: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -301,7 +302,7 @@ export function SystemPage() {
                       {j.status}
                     </span>
                   </td>
-                  <td className="mono">{(j.progress * 100).toFixed(0)}%</td>
+                  <td className="mono">{(j.progress * 100).toFixed(3)}%</td>
                   <td className="muted">{j.error || j.message || "—"}</td>
                   <td className="mono muted">{j.created_at}</td>
                 </tr>
@@ -339,6 +340,19 @@ function ParamField({
           onChange={(e) => onChange(e.target.checked)}
         />
         {param.label}
+      </label>
+    );
+  }
+  if (param.type === "codes") {
+    return (
+      <label style={{ minWidth: 220 }}>
+        {param.label}
+        <StockPicker
+          mode="multi"
+          value={value === undefined || value === null ? "" : String(value)}
+          onChange={onChange}
+          placeholder={param.help || "搜索添加股票"}
+        />
       </label>
     );
   }

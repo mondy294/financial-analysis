@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 
 from quant_system.database.models import PatternDefinitionRevision, PatternDefinitionRow
 from quant_system.patterns.definition import PatternDefinition
-from quant_system.patterns.definitions import build_range_breakout_definition
+from quant_system.patterns.definitions import (
+    build_arc_high_retest_definition,
+    build_range_breakout_definition,
+)
 from quant_system.patterns.serde import (
     DefinitionValidationError,
     bump_version,
@@ -27,6 +30,7 @@ DRAFT_VERSION = "__draft__"
 # 内置种子 builders：id → callable
 _SEED_BUILDERS: dict[str, Any] = {
     "RANGE_BREAKOUT": build_range_breakout_definition,
+    "ARC_HIGH_RETEST": build_arc_high_retest_definition,
 }
 
 
@@ -61,6 +65,11 @@ def ensure_seeded(session: Session) -> list[str]:
     for pid, builder in _SEED_BUILDERS.items():
         row = session.get(PatternDefinitionRow, pid)
         if row is not None:
+            # 补齐历史行缺失的英文名（不覆盖用户已填值）
+            if not (row.display_name_en or "").strip():
+                seed_en = (builder().display_name_en or "").strip()
+                if seed_en:
+                    row.display_name_en = seed_en
             continue
         definition = builder()
         now = _now()
@@ -68,6 +77,7 @@ def ensure_seeded(session: Session) -> list[str]:
             PatternDefinitionRow(
                 id=definition.id,
                 display_name=definition.display_name,
+                display_name_en=definition.display_name_en or None,
                 description=definition.description,
                 status="published",
                 published_version=definition.version,
@@ -118,6 +128,7 @@ def list_definitions(session: Session) -> list[dict[str, Any]]:
             {
                 "id": row.id,
                 "display_name": row.display_name,
+                "display_name_en": row.display_name_en or "",
                 "description": row.description or "",
                 "status": row.status,
                 "published_version": row.published_version,
@@ -166,9 +177,15 @@ def get_editable(session: Session, pattern_id: str) -> dict[str, Any]:
         draft_updated_at = None
     else:
         raise RuntimeError(f"{row.id} 无 draft 也无 published")
+    # 行上的中英文名优先于 body（保存草稿后立即对列表/meta 生效）
+    if isinstance(body, dict):
+        body = dict(body)
+        body["display_name"] = row.display_name
+        body["display_name_en"] = row.display_name_en or body.get("display_name_en") or ""
     return {
         "id": row.id,
         "display_name": row.display_name,
+        "display_name_en": row.display_name_en or "",
         "description": row.description or "",
         "status": row.status,
         "published_version": row.published_version,
@@ -213,6 +230,7 @@ def save_draft(
         rev.created_at = now
         rev.created_by = "local"
     row.display_name = definition.display_name
+    row.display_name_en = definition.display_name_en or None
     row.description = definition.description
     row.updated_at = now
     if row.status == "archived":
@@ -259,6 +277,7 @@ def publish(
     row.published_version = new_version
     row.status = "published"
     row.display_name = definition.display_name
+    row.display_name_en = definition.display_name_en or None
     row.description = definition.description
     row.updated_at = now
     session.flush()
@@ -421,6 +440,8 @@ def clone_definition(
     body["id"] = pid
     body["version"] = "v0"
     body["display_name"] = (display_name or "").strip() or f"{src_row.display_name} (副本)"
+    if not body.get("display_name_en") and src_row.display_name_en:
+        body["display_name_en"] = src_row.display_name_en
     if body.get("description") and "克隆自" not in str(body.get("description")):
         body["description"] = f"{body['description']}（克隆自 {src_row.id}）"
     elif not body.get("description"):
@@ -432,6 +453,7 @@ def clone_definition(
         PatternDefinitionRow(
             id=pid,
             display_name=definition.display_name,
+            display_name_en=definition.display_name_en or None,
             description=definition.description,
             status="draft",
             published_version=None,

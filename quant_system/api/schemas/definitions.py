@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class DefinitionListItemOut(BaseModel):
     id: str
     display_name: str
+    display_name_en: str = ""
     description: str = ""
     status: str
     published_version: str | None = None
@@ -26,6 +27,7 @@ class DefinitionDeleteOut(BaseModel):
 class DefinitionEditableOut(BaseModel):
     id: str
     display_name: str
+    display_name_en: str = ""
     description: str = ""
     status: str
     published_version: str | None = None
@@ -75,6 +77,7 @@ class RevisionBodyOut(BaseModel):
 
 class FeatureCatalogItemOut(BaseModel):
     name: str
+    label: str = ""
     category: str
     kind: str
     description: str = ""
